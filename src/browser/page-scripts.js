@@ -16,7 +16,11 @@ export async function listAccountsInPage(arg) {
     let data = null;
     try { data = JSON.parse(await response.text()); } catch { data = null; }
     if (response.status === 401) return { ok: false, kind: 'auth', status: 401, message: 'HTTP 401' };
-    if (!data || typeof data !== 'object') return { ok: false, kind: response.status >= 500 ? 'http' : 'api', status: response.status, message: `TikTok вернул HTTP ${response.status}` };
+    if (!data || typeof data !== 'object') {
+      // 403 with an empty body = risk control, not a dead session (the page did not redirect to login).
+      if (response.status === 403) return { ok: false, kind: 'blocked', status: 403, message: 'TikTok блокирует запросы с этого IP (HTTP 403). Почти наверняка нужен резидентный прокси для этого аккаунта.' };
+      return { ok: false, kind: response.status >= 500 ? 'http' : 'api', status: response.status, message: `TikTok вернул HTTP ${response.status}` };
+    }
     if (data.code !== 0) {
       const msg = String(data.msg || data.message || '');
       const key = String(data.extra?.i18n_key || '');
@@ -35,7 +39,12 @@ export async function listAccountsInPage(arg) {
           } catch { /* try the next passport host */ }
         }
       }
-      return { ok: false, kind: auth ? 'auth' : 'api', status: response.status, code: data.code, message: msg.slice(0, 200) || `code ${data.code}` };
+      if (auth) {
+        // Passport could not confirm the login: either the session is really dead, or risk control
+        // blocks the check too. The page did not redirect to login, so keep an actionable message.
+        return { ok: false, kind: 'auth', status: response.status, code: data.code, message: `Сессия не подтверждена: TikTok отвечает «${(msg || `code ${data.code}`).slice(0, 80)}» и блокирует проверку (пасспорт недоступен). Если аккаунт рабочий — привяжите резидентный прокси и повторите.` };
+      }
+      return { ok: false, kind: 'api', status: response.status, code: data.code, message: msg.slice(0, 200) || `code ${data.code}` };
     }
 
     const isId = (v) => /^\d{5,30}$/.test(String(v ?? ''));

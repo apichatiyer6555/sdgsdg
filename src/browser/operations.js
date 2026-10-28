@@ -115,8 +115,11 @@ export class Operations {
     const kind = error instanceof FlowError || error?.kind ? error.kind : 'error';
     const message = firstLine(error);
     if (kind === 'auth') {
-      this.accounts.setStatus(id, 'session_expired', AUTH_MESSAGE, { lastCheckAt: nowIso(), lastError: AUTH_MESSAGE });
-      this.#log(id, 'warn', 'session.expired', AUTH_MESSAGE, user);
+      this.accounts.setStatus(id, 'session_expired', message, { lastCheckAt: nowIso(), lastError: message });
+      this.#log(id, 'warn', 'session.expired', message, user);
+    } else if (kind === 'blocked') {
+      this.accounts.setStatus(id, 'error', message, { lastCheckAt: nowIso(), lastError: message });
+      this.#log(id, 'warn', 'session.blocked', message, user);
     } else if (kind === 'no_session') {
       this.accounts.setStatus(id, 'new', message, { lastError: message });
       this.#log(id, 'warn', 'session.missing', message, user);

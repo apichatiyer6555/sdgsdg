@@ -103,6 +103,17 @@ describe('browser flows against a mock TikTok', { skip: chrome ? false : 'no Chr
     assert.ok(kinds.includes('session.ok'));
   });
 
+  test('a risk-control 403 is reported as blocked, not as an expired session', async () => {
+    const created = await api.post('/api/accounts', { method: 'session', label: 'Blocked IP', session: sessionJson(mock.state.createSession({ blocked: true })) });
+    const id = created.body.id;
+    await api.post(`/api/accounts/${id}/check`);
+    const a = await settled(id, 'error');
+    assert.match(a.statusDetail, /403/);
+    assert.match(a.statusDetail, /прокси/);
+    const kinds = (await api.get(`/api/accounts/${id}`)).body.events.map((e) => e.kind);
+    assert.ok(kinds.includes('session.blocked'));
+  });
+
   test('password login succeeds, saves the session and syncs', async () => {
     const acc = await addPassword('ok1@x.test');
     const started = await api.post(`/api/accounts/${acc.id}/login`);

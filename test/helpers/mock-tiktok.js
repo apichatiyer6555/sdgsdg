@@ -95,6 +95,7 @@ export async function startMockTikTok() {
     if (url.pathname === '/api/v2/i18n/account/account_switch_list/') {
       if (!authed(req)) return json(res, 200, { msg: 'permission error.', code: 40002, data: {}, extra: { i18n_key: 'KEY_PERMISSION_ERROR', type: 'core_user_failure' } });
       if (sessionFlags(req)?.noads) return json(res, 200, { msg: 'permission error.', code: 40002, data: {}, extra: { i18n_key: 'KEY_PERMISSION_ERROR', type: 'core_user_failure' } });
+      if (sessionFlags(req)?.blocked) { res.writeHead(403, { 'content-type': 'text/plain' }); return res.end(''); }
       if (state.listFails) return json(res, 500, { msg: 'internal error', code: 50000 });
       const child = Object.entries(ADVERTISERS).map(([id, a]) => ({ id, name: a.name, country: a.country, currency: a.currency, status: 1 }));
       return json(res, 200, { code: 0, msg: 'OK', data: { data: [{ id: '7600000000000000001', name: 'Mock BC', role: '99', child }] } });

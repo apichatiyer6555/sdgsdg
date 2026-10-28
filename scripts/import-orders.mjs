@@ -70,10 +70,17 @@ function parseOrder(file) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const summarize = (a) => `#${a.id} ${a.status}${a.statusDetail ? ` (${a.statusDetail.slice(0, 80)})` : ''} кабинетов=${a.adAccountsCount} BC=${a.bcCount}${a.spend7d.length ? ` расход7д=${JSON.stringify(a.spend7d)}` : ''}`;
 
-// sign in; the panel forces a password change on fresh users
-let me = await api('POST', '/api/auth/login', { login: LOGIN, password: PASSWORD });
+// sign in; the panel forces a password change on fresh users (this script appends "-X9")
+let me;
+let PASSWORD_CHANGED = false;
+try {
+  me = await api('POST', '/api/auth/login', { login: LOGIN, password: PASSWORD });
+} catch (e) {
+  me = await api('POST', '/api/auth/login', { login: LOGIN, password: `${PASSWORD}-X9` });
+  PASSWORD_CHANGED = true;
+}
 csrf = me.csrf;
-if (me.user.mustChangePassword) {
+if (me.user.mustChangePassword && !PASSWORD_CHANGED) {
   const NEW = PASSWORD + '-X9';
   await api('POST', '/api/auth/change-password', { currentPassword: PASSWORD, newPassword: NEW });
   me = await api('POST', '/api/auth/login', { login: LOGIN, password: NEW });
