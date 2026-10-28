@@ -8,8 +8,9 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-# Chromium + its system libraries/fonts come from Playwright; deps need root, the app itself runs as "node".
-RUN npm ci --omit=dev \
+# better-sqlite3 ships prebuilt binaries, so install scripts (node-gyp) are skipped. Chromium + its system libraries/fonts come from
+# Playwright; deps need root, the app itself runs as "node".
+RUN npm ci --omit=dev --ignore-scripts \
     && npx playwright-core install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* /root/.npm /tmp/*
 
