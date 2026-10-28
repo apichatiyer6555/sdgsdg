@@ -1,0 +1,28 @@
+# Zaliv — TikTok Ads hub. Caddy (server-caddy) proxies zaliv.vibecods.xyz -> host.docker.internal:${ZALIV_PORT}.
+name: zaliv
+
+services:
+  zaliv:
+    build: .
+    image: zaliv-app
+    container_name: zaliv-app
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATA_DIR: /app/data
+      BACKUP_DIR: /app/backups
+    ports:
+      - "127.0.0.1:${ZALIV_PORT:-8120}:3000"
+    volumes:
+      # Named volume: SQLite WAL must live on the Linux VM disk, not on a Windows bind mount.
+      - zaliv_data:/app/data
+      - ./backups:/app/backups
+    shm_size: "1gb"
+    mem_limit: 4g
+    cpus: 3
+
+volumes:
+  zaliv_data:

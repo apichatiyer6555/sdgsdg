@@ -1,0 +1,9 @@
+node_modules
+data
+backups
+.env
+.git
+.hoplite
+docs/reference
+web/dev
+*.log

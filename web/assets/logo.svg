@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Zaliv">
+  <defs>
+    <linearGradient id="g" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#25f4ee"/>
+      <stop offset="1" stop-color="#fe2c55"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#0a0c11"/>
+  <rect x=".75" y=".75" width="62.5" height="62.5" rx="14.25" fill="none" stroke="#313a4c" stroke-width="1.5"/>
+  <path d="M18 17h28L18 38h28" fill="none" stroke="url(#g)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M13 50c3.5-3.2 7-3.2 10.5 0s7 3.2 10.5 0 7-3.2 10.5 0 5.5 2.4 6.5 0" fill="none" stroke="url(#g)" stroke-width="3" stroke-linecap="round" opacity=".8"/>
+</svg>
