@@ -105,7 +105,7 @@ function buildShell() {
   const badge = h('span', { class: 'nav-badge' });
   const pill = h('div', { class: 'status-pill', role: 'status' });
   const nav = h('nav', { class: 'nav', 'aria-label': 'Разделы' }, Object.entries(ROUTES).map(([id, route]) =>
-    h('a', { href: `#/${id}`, title: route.title, dataset: { route: id } }, icon(route.icon, 19), h('span', { class: 'nav-label' }, route.title), id === 'accounts' ? badge : null)));
+    h('a', { href: `#/${id}`, title: route.title, 'aria-label': route.title, dataset: { route: id } }, icon(route.icon, 19), h('span', { class: 'nav-label' }, route.title), id === 'accounts' ? badge : null)));
   const title = h('h1', { id: 'page-title' });
   const themeBtn = h('button', { class: 'icon-btn bordered', type: 'button', onclick: () => { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); paintTheme(); } });
   const paintTheme = () => {

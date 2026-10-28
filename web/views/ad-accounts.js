@@ -150,7 +150,7 @@ export function mount(root, { params }) {
     }
     if (!list.length) {
       table.hidden = true;
-      fill(stateBox, emptyState({ title: 'Ничего не найдено', text: 'Измените запрос или сбросьте фильтры.', actions: [h('button', { class: 'btn', type: 'button', onclick: () => { Object.assign(S, { q: '', state: 'all', accountId: '', bcId: '', currency: '' }); search.value = ''; changed(); } }, 'Сбросить фильтры')] }));
+      fill(stateBox, emptyState({ title: 'Ничего не найдено', text: 'Измените запрос или сбросьте фильтры.', actions: [h('button', { class: 'btn', type: 'button', onclick: () => { Object.assign(S, { q: '', state: 'all', accountId: '', bcId: '', currency: '' }); search.value = ''; selectsFor = null; changed(); } }, 'Сбросить фильтры')] }));
       return;
     }
     table.hidden = false;
