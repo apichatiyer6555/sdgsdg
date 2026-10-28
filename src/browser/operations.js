@@ -89,7 +89,9 @@ export class Operations {
       return { ok: false, kind: 'network', message: `Не удалось открыть TikTok Ads (сеть/прокси): ${firstLine(e)}` };
     }
     await this.#settle(page);
-    if (LOGIN_PATH.test(new URL(page.url()).pathname)) return { ok: false, kind: 'auth', message: AUTH_MESSAGE };
+    if (LOGIN_PATH.test(new URL(page.url()).pathname)) {
+      return { ok: false, kind: 'auth', message: 'TikTok перенаправил на страницу входа: сессия не принята с этого IP (частая причина — риск-контроль без резидентного прокси; сам магазин это предупреждает) либо действительно истекла. Попробуйте с прокси или вставьте свежие cookies.' };
+    }
     let result = await page.evaluate(listAccountsInPage, { origin: tiktok.origin, expected: '' });
     if (!result.ok && result.kind === 'network') {
       await sleep(2500);
