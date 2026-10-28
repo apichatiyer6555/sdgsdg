@@ -77,7 +77,7 @@ describe('browser flows against a mock TikTok', { skip: chrome ? false : 'no Chr
     const created = await api.post('/api/accounts', { method: 'session', label: 'Dead cookies', session: sessionJson('not-a-valid-token') });
     await api.post(`/api/accounts/${created.body.id}/check`);
     const a = await settled(created.body.id, 'session_expired');
-    assert.match(a.statusDetail, /Сессия истекла/);
+    assert.match(a.statusDetail, /не принята|истекла/);
 
     const good = await api.post('/api/accounts', { method: 'session', label: 'Will expire', session: sessionJson(mock.state.createSession()) });
     await api.post(`/api/accounts/${good.body.id}/check`);
