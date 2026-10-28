@@ -55,7 +55,8 @@ export function createDb() {
     { id: db.nextUserId++, login: 'ex-buyer', password: 'ex-buyer-password-1', role: 'viewer', mustChangePassword: false, disabled: true, createdAt: iso(now - 120 * 864e5), lastLoginAt: iso(now - 60 * 864e5) }
   );
 
-  statusPlan(r).forEach((plan) => {
+  const plan0 = process.env.MOCK_EMPTY ? [] : statusPlan(r); // MOCK_EMPTY=1: no logins, to look at empty states
+  plan0.forEach((plan) => {
     const id = db.nextAccountId++;
     const client = r() < 0.85 ? pick(r, CLIENTS) : '';
     const status = plan === 'syncing' ? 'active' : plan;
@@ -98,7 +99,7 @@ export function createDb() {
 
   // Journal
   const kinds = [['info', 'login', 'Вход выполнен'], ['info', 'sync', 'Синхронизация завершена'], ['info', 'check', 'Сессия действительна'], ['warn', 'check', 'Сессия истекла'], ['info', 'code', 'Код подтверждения принят'], ['error', 'login', 'Неверный логин или пароль'], ['info', 'audit', 'Добавлен аккаунт'], ['warn', 'sync', 'Часть кабинетов не загружена'], ['error', 'sync', 'Ошибка синхронизации: таймаут']];
-  for (let i = 0; i < 320; i += 1) {
+  for (let i = 0; i < (process.env.MOCK_EMPTY ? 0 : 320); i += 1) {
     const acc = pick(r, db.accounts);
     const [level, kind, message] = pick(r, kinds);
     db.journal.push({ id: db.nextJournalId++, ts: iso(now - (320 - i) * int(r, 2, 9) * 60000), level, kind, accountId: acc.id, accountLabel: acc.label, user: kind === 'audit' || r() < 0.3 ? pick(r, ['admin', 'manager']) : '', message });
