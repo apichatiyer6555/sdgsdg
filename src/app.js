@@ -17,6 +17,7 @@ export async function buildApp(ctx) {
   const { config } = ctx;
   const app = Fastify({
     trustProxy: config.trustProxy,
+    disableRequestLogging: (req) => req.url === '/healthz',
     bodyLimit: 2 * 1024 * 1024,
     logger: {
       level: config.logLevel,

@@ -170,7 +170,7 @@ if (section('accounts')) {
   // selection, shift-range, bulk
   const boxes = page.locator('.accounts-table tbody input[data-act=select]');
   await boxes.nth(0).check();
-  await boxes.nth(2).check({ modifiers: ['Shift'] });
+  await boxes.nth(2).click({ modifiers: ['Shift'] });
   ok((await page.locator('.bulk-count').textContent()).includes('3'), 'shift-click selects a range (3 rows)');
   await shot(page, '05-accounts-bulk-dark');
   await page.waitForTimeout(3200); // at least one polling round while rows are selected
