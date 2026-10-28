@@ -145,6 +145,8 @@ if (section('accounts')) {
   ok(domRows > 8 && domRows < 80, `only a window of rows is in the DOM (${domRows} of 300)`);
   const rowH = await rows().first().evaluate((el) => el.getBoundingClientRect().height);
   ok(Math.abs(rowH - 60) < 0.5, `rows have the fixed height the virtualizer assumes (${rowH}px)`);
+  const gap = await page.evaluate(() => document.querySelector('.accounts-table thead').getBoundingClientRect().bottom - document.querySelector('.accounts-table tbody tr:not(.v-spacer)').getBoundingClientRect().top);
+  ok(Math.abs(gap) < 0.5, `spacer rows add no offset above the first row (${gap}px)`);
   await page.evaluate(() => { document.querySelector('.table-wrap').scrollTop = 1e6; });
   await page.waitForTimeout(250);
   const lastLabel = (await rows().last().locator('.acc-name').textContent()).trim();
@@ -409,6 +411,7 @@ if (section('drawer')) {
   // kebab menu + keyboard
   await rows().first().locator('[data-act=more]').click();
   await page.waitForSelector('.menu');
+  await page.waitForTimeout(300); // let the pop-in animation finish
   await shot(page, '17-row-menu-dark');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Escape');

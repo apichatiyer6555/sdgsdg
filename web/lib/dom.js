@@ -65,7 +65,7 @@ export function toast(message, kind = 'info', opts = {}) {
   if (!host) return;
   const { ms = kind === 'error' ? 6500 : 3800, action } = typeof opts === 'number' ? { ms: opts } : opts;
   for (const old of [...host.children]) if (old.dataset.msg === message) old.remove();
-  while (host.children.length >= 4) host.firstElementChild.remove();
+  while (host.children.length >= 3) host.firstElementChild.remove();
   let timer;
   const dismiss = () => { clearTimeout(timer); el.classList.add('out'); setTimeout(() => el.remove(), 250); };
   const el = h('div', { class: `toast ${kind}`, role: kind === 'error' ? 'alert' : 'status', dataset: { msg: message } },

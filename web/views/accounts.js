@@ -50,9 +50,9 @@ export function mount(root, { params }) {
   paintRefresh();
   const toolbar = h('div', { class: 'toolbar' },
     h('div', { class: 'toolbar-row' },
-      h('div', { class: 'search' }, icon('search', 16), search), tagSel, clientSel, h('span', { class: 'spacer' }), refreshBtn,
+      h('div', { class: 'search' }, icon('search', 16), search), tagSel, clientSel, h('span', { class: 'spacer' }), summary, refreshBtn,
       edit ? h('button', { class: 'btn primary', type: 'button', onclick: () => openAddDialog() }, icon('plus', 16), 'Добавить') : null),
-    h('div', { class: 'chips-row' }, chips.el, h('span', { class: 'spacer' }), summary));
+    chips.el);
   search.addEventListener('input', debounce(() => { if (alive) { S.q = search.value; changed(); } }, 160));
 
   const makeSelect = (slot, key, placeholder, label, values) => {

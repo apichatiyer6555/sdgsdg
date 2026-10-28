@@ -27,8 +27,7 @@
 .toolbar-row .select { width: auto; min-width: 150px; max-width: 220px; }
 .toolbar-inline { margin: 0; }
 .summary { white-space: nowrap; }
-.chips-row { display: flex; align-items: flex-start; gap: 12px; }
-.chips-row .summary { padding-top: 6px; }
+@media (max-width: 1280px) { .summary { display: none; } }
 .totals { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 13px; color: var(--muted); }
 .totals b { color: var(--text); font-variant-numeric: tabular-nums; }
 .table-wrap { position: relative; flex: 1; min-height: 0; overflow: auto; background: var(--bg); }
@@ -55,7 +54,7 @@ th[aria-sort="ascending"], th[aria-sort="descending"] { color: var(--text); }
 .table-box.tall { max-height: calc(100vh - 360px); min-height: 240px; }
 .table-box .dtable thead th { position: sticky; }
 .nowrap { white-space: nowrap; }
-.v-spacer td { height: 0; padding: 0; border: 0; background: transparent; }
+.dtable tbody tr.v-spacer td { padding: 0; border: 0; background: transparent; }
 .dtable tbody tr.v-spacer:hover td { background-image: none; }
 .strong { font-weight: 650; }
 .cell2 { display: grid; gap: 2px; min-width: 0; align-content: center; }
@@ -95,7 +94,7 @@ th[aria-sort="ascending"], th[aria-sort="descending"] { color: var(--text); }
 .row-actions { display: flex; justify-content: flex-end; gap: 2px; }
 .row-actions .icon-btn { width: 28px; height: 28px; }
 .dtable tr.is-busy td { background-image: linear-gradient(color-mix(in srgb, var(--info) 5%, transparent), color-mix(in srgb, var(--info) 5%, transparent)); }
-.bulk-bar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 15; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; max-width: calc(100% - 32px); padding: 8px 10px; background: var(--card-3); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow); animation: pop .16s; }
+.bulk-bar { position: absolute; left: 16px; right: 16px; bottom: 18px; margin: 0 auto; width: max-content; max-width: calc(100% - 32px); z-index: 15; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; padding: 8px 10px; background: var(--card-3); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow); animation: pop .16s; }
 .bulk-bar.busy { opacity: .75; }
 .bulk-count { padding: 0 8px 0 4px; font-weight: 700; font-size: 13px; white-space: nowrap; }
 .bulk-sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 2px; }
