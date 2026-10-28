@@ -36,7 +36,7 @@ export function createBulkBar({ selection, clear }) {
 
   const need = () => selection.size;
   const btn = (label, glyph, onClick, cls = '') => {
-    const b = h('button', { class: `btn sm ${cls}`, type: 'button', onclick: onClick }, icon(glyph, 14), label);
+    const b = h('button', { class: `btn xs ${cls}`, type: 'button', onclick: onClick }, icon(glyph, 14), label);
     buttons.push(b);
     return b;
   };
@@ -48,7 +48,7 @@ export function createBulkBar({ selection, clear }) {
     btn('Проверить', 'shield', () => run('Проверка сессий', 'check')),
     btn('Синхронизировать', 'refresh', () => run('Синхронизация', 'sync')),
     h('span', { class: 'bulk-sep' }),
-    btn('Тег', 'tag', async () => {
+    btn('+ Тег', 'tag', async () => {
       const value = await promptDialog({ title: 'Добавить тег', label: 'Тег', suggestions: accounts.tags, placeholder: 'например, nutra', hint: `Тег будет добавлен: ${countLabel(need())}.`, confirmLabel: 'Добавить' });
       if (value) run('Добавление тега', 'tag', value);
     }),
