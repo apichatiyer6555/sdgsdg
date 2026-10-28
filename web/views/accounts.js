@@ -179,6 +179,7 @@ export function mount(root, { params }) {
   function resetFilters() {
     Object.assign(S, { q: '', status: 'all', tag: '', client: '' });
     search.value = '';
+    metaSig = ''; // rebuild the tag / client selects so they show "all" again
     changed();
   }
 

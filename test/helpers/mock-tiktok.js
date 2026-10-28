@@ -53,17 +53,18 @@ $('#solve').addEventListener('click', async () => handle(await post('/passport/c
 `);
 
 export async function startMockTikTok() {
-  const sessions = new Set();
+  const sessions = new Map(); // token -> flags ({ noads } | {})
   const state = {
     requests: [],
     listFails: false,
-    createSession() { const t = randomBytes(12).toString('hex'); sessions.add(t); return t; },
+    createSession(flags = {}) { const t = randomBytes(12).toString('hex'); sessions.set(t, flags); return t; },
     expireAll() { sessions.clear(); }
   };
 
   const readBody = (req) => new Promise((resolve) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => resolve(b)); });
   const cookies = (req) => Object.fromEntries(String(req.headers.cookie || '').split(';').map((c) => c.trim().split(/=(.*)/s).slice(0, 2)).filter((p) => p[0]));
   const json = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(data)); };
+  const sessionFlags = (req) => sessions.get(cookies(req).sessionid);
   const authed = (req) => sessions.has(cookies(req).sessionid);
   const sessionCookies = (t) => [`sessionid=${t}; Path=/; HttpOnly`, `csrftoken=csrf-${t}; Path=/`];
 
@@ -93,9 +94,14 @@ export async function startMockTikTok() {
     }
     if (url.pathname === '/api/v2/i18n/account/account_switch_list/') {
       if (!authed(req)) return json(res, 200, { msg: 'permission error.', code: 40002, data: {}, extra: { i18n_key: 'KEY_PERMISSION_ERROR', type: 'core_user_failure' } });
+      if (sessionFlags(req)?.noads) return json(res, 200, { msg: 'permission error.', code: 40002, data: {}, extra: { i18n_key: 'KEY_PERMISSION_ERROR', type: 'core_user_failure' } });
       if (state.listFails) return json(res, 500, { msg: 'internal error', code: 50000 });
       const child = Object.entries(ADVERTISERS).map(([id, a]) => ({ id, name: a.name, country: a.country, currency: a.currency, status: 1 }));
       return json(res, 200, { code: 0, msg: 'OK', data: { data: [{ id: '7600000000000000001', name: 'Mock BC', role: '99', child }] } });
+    }
+    if (url.pathname === '/passport/web/account/info/') {
+      if (!authed(req)) return json(res, 200, { code: 1000001, message: 'session expired', data: {} });
+      return json(res, 200, { code: 20000, message: 'success', data: { user_id: '7666000000000000999', user_name: 'mock_user' } });
     }
     if (url.pathname === '/api/v4/i18n/statistics/op/campaign/list/' && req.method === 'POST') {
       await readBody(req);

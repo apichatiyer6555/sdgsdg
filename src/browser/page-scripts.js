@@ -21,6 +21,20 @@ export async function listAccountsInPage(arg) {
       const msg = String(data.msg || data.message || '');
       const key = String(data.extra?.i18n_key || '');
       const auth = data.code === 40002 || /PERMISSION|LOGIN|AUTH|SESSION/i.test(key) || /permission|log ?in|not auth|session|expired/i.test(msg);
+      // 40002 also answers for a live login that simply has no Ads Manager access (fresh accounts).
+      // Confirm the login itself through passport before declaring the session dead.
+      if (auth) {
+        for (const url of ['/passport/web/account/info/', 'https://www.tiktok.com/passport/web/account/info/']) {
+          try {
+            const pr = await fetch(url, { credentials: 'include', headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+            if (!pr.ok) continue;
+            let pj; try { pj = JSON.parse(await pr.text()); } catch { pj = null; }
+            if (pj?.code === 20000 || pj?.message === 'success' || pj?.data?.user_id) {
+              return { ok: true, currentAccount: current, accounts: [], businessCenters: [], total: 0, noAdsAccess: true, message: 'Логин жив, но у него нет доступа к Ads Manager: рекламных кабинетов не найдено.' };
+            }
+          } catch { /* try the next passport host */ }
+        }
+      }
       return { ok: false, kind: auth ? 'auth' : 'api', status: response.status, code: data.code, message: msg.slice(0, 200) || `code ${data.code}` };
     }
 

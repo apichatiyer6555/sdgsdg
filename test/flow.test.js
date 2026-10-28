@@ -87,6 +87,22 @@ describe('browser flows against a mock TikTok', { skip: chrome ? false : 'no Chr
     await settled(good.body.id, 'session_expired');
   });
 
+  test('a live login without Ads access stays active with a note', async () => {
+    const created = await api.post('/api/accounts', { method: 'session', label: 'No ads access', session: sessionJson(mock.state.createSession({ noads: true })) });
+    const id = created.body.id;
+    await api.post(`/api/accounts/${id}/check`);
+    const a = await settled(id, 'active');
+    assert.match(a.statusDetail, /нет доступа к Ads Manager/);
+    assert.equal(a.adAccountsCount, 0);
+    assert.equal((await api.get(`/api/accounts/${id}`)).body.adAccounts.length, 0);
+    await api.post(`/api/accounts/${id}/sync`);
+    const synced = await waitFor(async () => { const x = await account(id); return x.lastSyncAt && !x.busy ? x : null; }, { message: 'sync of no-ads login' });
+    assert.equal(synced.status, 'active');
+    assert.match(synced.statusDetail, /нет доступа к Ads Manager/);
+    const kinds = (await api.get(`/api/accounts/${id}`)).body.events.map((e) => e.kind);
+    assert.ok(kinds.includes('session.ok'));
+  });
+
   test('password login succeeds, saves the session and syncs', async () => {
     const acc = await addPassword('ok1@x.test');
     const started = await api.post(`/api/accounts/${acc.id}/login`);

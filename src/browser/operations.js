@@ -149,8 +149,9 @@ export class Operations {
         return listing;
       });
       if (!result.ok) throw Object.assign(new Error(result.message), { kind: result.kind });
-      this.accounts.setStatus(id, 'active', '', { lastCheckAt: nowIso(), lastError: '', adAccountsCount: result.accounts.length, bcCount: result.businessCenters.length });
-      this.#log(id, 'info', 'session.ok', `Сессия активна. Кабинетов: ${result.accounts.length}.`, user);
+      const note = result.noAdsAccess ? (result.message || '') : '';
+      this.accounts.setStatus(id, 'active', note, { lastCheckAt: nowIso(), lastError: '', adAccountsCount: result.accounts.length, bcCount: result.businessCenters.length });
+      this.#log(id, result.noAdsAccess ? 'warn' : 'info', 'session.ok', result.noAdsAccess ? 'Сессия активна, но у логина нет рекламных кабинетов (нет доступа к Ads Manager).' : `Сессия активна. Кабинетов: ${result.accounts.length}.`, user);
     } catch (e) {
       this.#failStatus(id, e, user);
     } finally {
@@ -193,10 +194,11 @@ export class Operations {
       const summaries = new Map(data.results.map((r) => [r.id, summarizeAdAccount(r.error ? { error: r.error } : r)]));
       const saved = this.adAccounts.saveSync(id, { businessCenters: listing.businessCenters, list: listing.accounts, summaries, period: range });
       const failed = [...summaries.values()].filter((s) => s.state === 'error').length;
-      this.accounts.setStatus(id, 'active', failed ? `Часть кабинетов не прочиталась: ${failed}.` : '', {
+      const note = listing.noAdsAccess ? (listing.message || '') : failed ? `Часть кабинетов не прочиталась: ${failed}.` : '';
+      this.accounts.setStatus(id, 'active', note, {
         lastSyncAt: nowIso(), lastCheckAt: nowIso(), lastError: '', adAccountsCount: saved.adAccounts, bcCount: saved.businessCenters
       });
-      this.#log(id, failed ? 'warn' : 'info', 'sync.done', `Синхронизация: кабинетов ${saved.adAccounts}, BC ${saved.businessCenters}${failed ? `, с ошибкой ${failed}` : ''}.`, user);
+      this.#log(id, failed || listing.noAdsAccess ? 'warn' : 'info', 'sync.done', listing.noAdsAccess ? 'Синхронизация: у логина нет рекламных кабинетов (нет доступа к Ads Manager).' : `Синхронизация: кабинетов ${saved.adAccounts}, BC ${saved.businessCenters}${failed ? `, с ошибкой ${failed}` : ''}.`, user);
     } catch (e) {
       this.#failStatus(id, e, user);
     } finally {
