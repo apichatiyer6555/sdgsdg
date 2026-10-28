@@ -14,16 +14,18 @@ const ONLY = process.env.SECTIONS ? new Set(process.env.SECTIONS.split(',')) : n
 fs.mkdirSync(SHOTS, { recursive: true });
 
 /* ---------- mock server ---------- */
-let server = null;
-let BASE = process.env.MOCK_URL;
-if (!BASE) {
+const spawned = [];
+process.on('exit', () => spawned.forEach((child) => child.kill()));
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
+async function startMock(env = {}) {
   const port = 4100 + Math.floor(Math.random() * 800);
-  server = spawn(process.execPath, [path.join(here, 'mock-server.js'), String(port)], { stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, MOCK_DELAY: '15' } });
-  await new Promise((resolve, reject) => { server.stdout.on('data', (d) => String(d).includes('Zaliv mock') && resolve()); server.on('error', reject); setTimeout(() => reject(new Error('mock did not start')), 8000); });
-  BASE = `http://localhost:${port}`;
-  process.on('exit', () => server.kill());
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
+  const child = spawn(process.execPath, [path.join(here, 'mock-server.js'), String(port)], { stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, MOCK_DELAY: '15', ...env } });
+  spawned.push(child);
+  await new Promise((resolve, reject) => { child.stdout.on('data', (d) => String(d).includes('Zaliv mock') && resolve()); child.on('error', reject); setTimeout(() => reject(new Error('mock did not start')), 8000); });
+  return { base: `http://localhost:${port}`, kill: () => child.kill() };
 }
+let BASE = process.env.MOCK_URL;
+if (!BASE) BASE = (await startMock()).base;
 
 /* ---------- bookkeeping ---------- */
 const failures = [];
@@ -709,9 +711,52 @@ if (section('viewer')) {
   await shot(page, '52-session-lost');
 }
 
+/* ======================================================================= */
+if (section('errors')) {
+  console.log('# error + empty states');
+  await context.clearCookies();
+  allow(/401.*\/api\//);
+  await login('manager', 'manager-password-1');
+  await page.waitForSelector('.shell');
+  // 500 on the ad accounts list -> error state with a working retry
+  allow(/500.*\/api\/ad-accounts/);
+  await page.route('**/api/ad-accounts', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Сервер временно недоступен', code: 'internal' }) }));
+  await goto('#/ad-accounts');
+  await page.waitForSelector('.state-box .empty');
+  ok((await page.locator('.state-box .empty').textContent()).includes('Сервер временно недоступен'), 'failed list shows an error state with the server message');
+  await shot(page, '26-error-state-dark');
+  await page.unroute('**/api/ad-accounts');
+  await page.locator('.state-box .btn', { hasText: 'Повторить' }).click();
+  await page.waitForSelector('.ads-table tbody tr:not(.v-spacer)');
+  ok(true, 'retry loads the table');
+  // empty installation: nothing added yet
+  const empty = await startMock({ MOCK_EMPTY: '1' });
+  await page.goto(empty.base);
+  await page.fill('input[name=login]', 'manager'); await page.fill('input[name=password]', 'manager-password-1'); await page.keyboard.press('Enter');
+  await page.waitForSelector('.shell');
+  await goto('#/accounts');
+  await page.waitForSelector('.state-box .empty');
+  ok((await page.locator('.state-box .empty').textContent()).includes('Пока нет ни одного аккаунта'), 'empty accounts list shows a call to action');
+  await shot(page, '27-empty-accounts-dark');
+  await page.locator('.state-box .btn', { hasText: 'Массовый импорт' }).click();
+  await page.waitForSelector('.panel.modal');
+  ok((await page.locator('.panel.modal [role=tab][aria-selected=true]').textContent()).includes('Массовый импорт'), 'CTA opens the add dialog on the import tab');
+  await page.keyboard.press('Escape');
+  await goto('#/ad-accounts');
+  await page.waitForSelector('.state-box .empty');
+  await shot(page, '28-empty-ads-dark');
+  await goto('#/dashboard');
+  await page.waitForSelector('.kpi-grid');
+  await page.waitForTimeout(300);
+  await shot(page, '29-empty-dashboard-dark');
+  await goto('#/journal');
+  await page.waitForSelector('.state-box .empty');
+  ok(true, 'journal shows an empty state');
+  empty.kill();
+}
+
 /* ---------- report ---------- */
 await browser.close();
-server?.kill();
 const unique = [...new Set(problems)];
 console.log(`\nconsole/page/network problems: ${unique.length}`);
 for (const p of unique) console.log(`  ! ${p}`);
