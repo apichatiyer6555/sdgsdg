@@ -24,7 +24,7 @@ export async function makeApp(env = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'zaliv-test-'));
   const config = loadConfig({
     NODE_ENV: 'test', DATA_DIR: dir, BACKUP_DIR: path.join(dir, 'backups'), APP_KEY: randomBytes(32).toString('base64'), ADMIN_PASSWORD: PASSWORD,
-    BROWSER_EXECUTABLE: findChrome(), LOGIN_POLL_MS: '120', LOGIN_TIMEOUT_MS: '8000', PAGE_TIMEOUT_MS: '15000', LOG_LEVEL: 'silent', ...env
+    BROWSER_EXECUTABLE: process.env.ZALIV_TEST_CHANNEL ? '' : findChrome(), LOGIN_POLL_MS: '120', LOGIN_TIMEOUT_MS: '8000', PAGE_TIMEOUT_MS: '15000', LOG_LEVEL: 'silent', ...env
   });
   const ctx = createContext(config);
   await bootstrapAdmin(ctx);
