@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { nowIso } from '../db/index.js';
 import { HttpError } from '../lib/errors.js';
@@ -12,8 +12,16 @@ export class Scheduler {
     this.lastRunAt = null;
     this.nextRunAt = null;
     this.lastHousekeeping = 0;
-    this.lastBackup = 0;
+    this.lastBackup = this.#newestBackupTime();
     this.ticking = false;
+  }
+
+  // A restart must not trigger another backup (and push old daily copies out of the rotation).
+  #newestBackupTime() {
+    try {
+      const names = readdirSync(this.config.backupDir).filter((f) => /^zaliv-\d{12}\.db$/.test(f));
+      return names.reduce((max, f) => Math.max(max, statSync(path.join(this.config.backupDir, f)).mtimeMs), 0);
+    } catch { return 0; }
   }
 
   start() {

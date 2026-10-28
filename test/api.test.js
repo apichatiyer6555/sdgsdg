@@ -231,6 +231,21 @@ describe('panel API', () => {
     } finally { await fresh.close(); }
   });
 
+  test('daily backup: one copy per day, a restart does not add another', async () => {
+    const b = await makeApp({ BACKUP_ENABLED: 'true' });
+    try {
+      await b.ctx.scheduler.tick();
+      const { readdirSync } = await import('node:fs');
+      assert.equal(readdirSync(b.ctx.config.backupDir).filter((f) => f.endsWith('.db')).length, 1);
+      await b.ctx.scheduler.tick();
+      assert.equal(readdirSync(b.ctx.config.backupDir).filter((f) => f.endsWith('.db')).length, 1);
+      const { Scheduler } = await import('../src/jobs/scheduler.js');
+      const restarted = new Scheduler({ config: b.ctx.config, db: b.ctx.db, settings: b.ctx.settings, ops: b.ctx.ops, events: b.ctx.events, panelSessions: b.ctx.panelSessions });
+      await restarted.tick();
+      assert.equal(readdirSync(b.ctx.config.backupDir).filter((f) => f.endsWith('.db')).length, 1);
+    } finally { await b.close(); }
+  });
+
   test('logout invalidates the session', async () => {
     const s = await signIn(env.app);
     const c = client(env.app, s);
