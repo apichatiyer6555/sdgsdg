@@ -1,5 +1,5 @@
 // Right-hand drawer with the full login card: profile, ad accounts, journal, session.
-import { h, toast, fmtTime, download, uid } from '../lib/dom.js';
+import { h, fill, toast, fmtTime, download, uid } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
 import { api } from '../lib/api.js';
 import { accounts, on, upsertAccount, canEdit, isOwner } from '../lib/store.js';
@@ -7,10 +7,12 @@ import { openDrawer, tabs, alertBox, confirmDialog, errorState, loadingBlock, em
 import { field, textInput, textArea, passwordField, tagInput, switchField } from '../lib/forms.js';
 import { accountStatusChip, adStateChip, levelChip, pill, spinner, ACCOUNT_STATUS, BUSY_LABEL } from '../lib/status.js';
 import { moneyParts, num, relTime, fmtDateTime } from '../lib/format.js';
+import { routeHref } from '../lib/router.js';
 import { loginAccount, checkAccount, syncAccount, cancelAccount, deleteAccount } from './account-actions.js';
 import { openCodeDialog } from './account-code.js';
 import { openBrowserDialog } from './browser-dialog.js';
 import { openCampaignsDrawer } from './campaigns-drawer.js';
+import { normAccount, normAd } from '../lib/normalize.js';
 
 const PROXY_RE = /^(https?|socks[45]h?):\/\/\S+$/i;
 const drawers = new Map();
@@ -37,13 +39,13 @@ export function openAccountDrawer(id, { tab = 'profile' } = {}) {
     if (!a) return;
     drawer.setTitle(a.label || a.login);
     drawer.setSubtitle(a.login);
-    headSlot.replaceChildren(accountStatusChip(a), a.busy && !ACCOUNT_STATUS[a.status]?.spin ? h('span', { class: 'busy-tag' }, spinner(), BUSY_LABEL[a.busy] ?? a.busy) : null);
+    fill(headSlot, accountStatusChip(a), a.busy && !ACCOUNT_STATUS[a.status]?.spin ? h('span', { class: 'busy-tag' }, spinner(), BUSY_LABEL[a.busy] ?? a.busy) : null);
   }
   function paintActions() {
     const a = live();
     if (!a || !edit) return;
     const btn = (label, glyph, onClick, { disabled, cls = '', title } = {}) => h('button', { class: `btn sm ${cls}`, type: 'button', disabled, title, onclick: onClick }, icon(glyph, 14), label);
-    actions.replaceChildren(
+    fill(actions,
       a.waitingFor === 'code' ? btn('Ввести код', 'mail', () => openCodeDialog(a), { cls: 'cta pulse' }) : null,
       btn('Войти', 'log-in', () => loginAccount(a), { disabled: !!a.busy || !a.hasPassword || a.status === 'disabled', title: a.hasPassword ? 'Войти по паролю' : 'Нет сохранённого пароля' }),
       btn('Проверить', 'shield', () => checkAccount(a), { disabled: !!a.busy || !a.hasSession || a.status === 'disabled', title: a.hasSession ? 'Проверить сессию' : 'Нет сохранённой сессии' }),
@@ -59,7 +61,7 @@ export function openAccountDrawer(id, { tab = 'profile' } = {}) {
     const list = data.adAccounts;
     tabsApi?.setBadge('ads', list.length || '');
     if (!list.length) { adsBox.replaceChildren(emptyState({ glyph: 'building', title: 'Кабинетов пока нет', text: 'Они появятся после успешной синхронизации активного логина.' })); return; }
-    adsBox.replaceChildren(h('div', { class: 'table-box' }, h('table', { class: 'dtable plain clickable' },
+    fill(adsBox, h('a', { class: 'linklike', href: routeHref('ad-accounts', { accountId: id }) }, 'Открыть в общем списке кабинетов →'), h('div', { class: 'table-box' }, h('table', { class: 'dtable plain clickable' },
       h('thead', null, h('tr', null, ['Кабинет', 'BC', 'Статус', 'Кампании', 'Расход 7д'].map((t, i) => h('th', { class: i > 2 ? 'num' : '' }, t)))),
       h('tbody', null, list.map((x) => h('tr', { tabindex: '0', onclick: () => openCampaignsDrawer({ accountId: x.accountId, advertiserId: x.id, name: x.name }), onkeydown: (e) => { if (e.key === 'Enter') openCampaignsDrawer({ accountId: x.accountId, advertiserId: x.id, name: x.name }); } },
         h('td', null, h('div', { class: 'cell2' }, h('b', { class: 'ellipsis' }, x.name), h('span', { class: 'muted small mono' }, x.id))),
@@ -71,7 +73,7 @@ export function openAccountDrawer(id, { tab = 'profile' } = {}) {
   function paintEvents() {
     const list = data.events;
     tabsApi?.setBadge('events', list.length || '');
-    eventsBox.replaceChildren(list.length ? h('div', { class: 'log' }, list.map((e) =>
+    fill(eventsBox, list.length ? h('a', { class: 'linklike', href: routeHref('journal', { accountId: id }) }, 'Весь журнал этого логина →') : null, list.length ? h('div', { class: 'log' }, list.map((e) =>
       h('div', { class: 'log-row' }, h('time', { class: 'mono muted', title: fmtDateTime(e.ts) }, fmtTime(e.ts)), levelChip(e.level), h('span', { class: 'pill sm' }, e.kind),
         h('span', { class: 'log-msg' }, e.message, e.user ? h('span', { class: 'muted' }, ` · ${e.user}`) : null)))) : emptyState({ glyph: 'list', title: 'Событий нет' }));
   }
@@ -89,7 +91,7 @@ export function openAccountDrawer(id, { tab = 'profile' } = {}) {
     const paintProxy = () => {
       const cur = data.account.proxy;
       proxy.disabled = !edit || clearProxy;
-      proxyInfo.replaceChildren(clearProxy ? 'Прокси будет удалён при сохранении. ' : cur ? ['Сейчас: ', h('code', null, cur), '. '] : 'Прокси не задан. ');
+      fill(proxyInfo, clearProxy ? 'Прокси будет удалён при сохранении. ' : cur ? ['Сейчас: ', h('code', null, cur), '. '] : 'Прокси не задан. ');
       proxyBtn.textContent = clearProxy ? 'Отменить удаление' : 'Убрать прокси';
       proxyBtn.hidden = !edit || !cur;
     };
@@ -130,7 +132,7 @@ export function openAccountDrawer(id, { tab = 'profile' } = {}) {
       save.disabled = true;
       save.replaceChildren(spinner(), 'Сохраняем…');
       try {
-        const next = await api.patch(`/api/accounts/${id}`, patch);
+        const next = normAccount(await api.patch(`/api/accounts/${id}`, patch));
         data.account = next;
         upsertAccount(next);
         pw.input.value = ''; proxy.value = ''; clearProxy = false;
@@ -148,13 +150,13 @@ export function openAccountDrawer(id, { tab = 'profile' } = {}) {
     off2.el,
     h('datalist', { id: clientList }, accounts.clients.map((c) => h('option', { value: c }))),
     error,
-    edit ? h('div', { class: 'row' }, save, dirtyNote) : null);
+    edit ? h('div', { class: 'form-actions' }, save, dirtyNote) : null);
     paintProxy();
     const wrap = h('div', { class: 'stack' },
-      h('dl', { class: 'meta-grid' }, ...[
+      h('dl', { class: 'meta-grid' }, [
         ['Способ входа', a.method === 'password' ? 'Пароль' : 'Сессия (cookies)'], ['Создан', fmtDateTime(a.createdAt)], ['Последний вход', fmtDateTime(a.lastLoginAt)],
         ['Последняя проверка', fmtDateTime(a.lastCheckAt)], ['Последняя синхр.', fmtDateTime(a.lastSyncAt)], ['Расход 7д', moneyParts(a.spend7d).join(' · ')]
-      ].flatMap(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
+      ].map(([k, v]) => h('div', null, h('dt', null, k), h('dd', null, v)))),
       a.lastError ? alertBox('warn', h('b', null, 'Последняя ошибка: '), a.lastError) : null,
       form,
       edit ? h('section', { class: 'danger-zone' }, h('div', null, h('b', null, 'Удаление аккаунта'), h('p', { class: 'muted small' }, 'Вместе с кабинетами и журналом. Действие нельзя отменить.')),
@@ -196,7 +198,8 @@ export function openAccountDrawer(id, { tab = 'profile' } = {}) {
 
   async function load() {
     try {
-      data = await api.get(`/api/accounts/${id}`);
+      const raw = await api.get(`/api/accounts/${id}`);
+      data = { account: normAccount(raw.account), adAccounts: (raw.adAccounts ?? []).map(normAd), events: raw.events ?? [] };
     } catch (error) {
       if (!drawer.open) return;
       body.replaceChildren(errorState(error.message, () => { body.replaceChildren(loadingBlock()); load(); }));
@@ -216,7 +219,7 @@ export function openAccountDrawer(id, { tab = 'profile' } = {}) {
     try {
       const next = await api.get(`/api/accounts/${id}`);
       if (!drawer.open) return;
-      data.adAccounts = next.adAccounts; data.events = next.events;
+      data.adAccounts = (next.adAccounts ?? []).map(normAd); data.events = next.events ?? [];
       if (tabsApi?.panel('ads').dataset.built) paintAds();
       if (tabsApi?.panel('events').dataset.built) paintEvents();
       tabsApi?.setBadge('ads', data.adAccounts.length || ''); tabsApi?.setBadge('events', data.events.length || '');

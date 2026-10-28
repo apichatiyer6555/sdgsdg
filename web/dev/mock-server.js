@@ -220,10 +220,10 @@ route('GET', '/api/dashboard', () => {
   const order = ['need_code', 'need_manual', 'bad_credentials', 'session_expired', 'error'];
   const attention = [
     ...db.accounts.filter((a) => order.includes(a.status)).sort((x, y) => order.indexOf(x.status) - order.indexOf(y.status))
-      .map((a) => ({ kind: 'account', accountId: a.id, adAccountId: null, title: a.label, state: a.status, text: a.statusDetail || a.login })),
+      .map((a) => ({ kind: 'account', accountId: a.id, adAccountId: null, title: a.label, state: a.status, text: a.statusDetail || a.login })).slice(0, 32),
     ...ads.filter((x) => x.state === 'issue' || x.state === 'error').sort((x, y) => (x.state === 'error' ? -1 : 1) - (y.state === 'error' ? -1 : 1))
       .map((x) => ({ kind: 'adaccount', accountId: x.accountId, adAccountId: x.id, title: `${x.name} · ${x.accountLabel}`, state: x.state, text: x.error || x.reasons.map((r) => r.text).join(', ') || 'Нет доставки' }))
-  ].slice(0, 50);
+  ].slice(0, 50); // worst first, both kinds
   return {
     accounts: { total: db.accounts.length, byStatus }, adAccounts: { total: ads.length, delivering: count('delivering'), issue: count('issue'), paused: count('paused'), empty: count('empty'), error: count('error') },
     campaigns: { total: sum((x) => x.campaigns.total), working: sum((x) => x.campaigns.working), problem: sum((x) => x.campaigns.problem) },

@@ -193,6 +193,8 @@ describe('panel API', () => {
     assert.equal((await viewer.get('/api/accounts')).status, 200);
     assert.equal((await viewer.post('/api/accounts', { method: 'password', login: 'v@x.test', password: 'p' })).status, 403);
     assert.equal((await viewer.put('/api/settings', { autoSyncEnabled: true })).status, 403);
+    assert.equal((await viewer.get('/api/accounts/1/browser')).status, 403);
+    assert.equal((await viewer.get('/api/accounts/1/browser/screenshot')).status, 403);
 
     await api.patch(`/api/users/${created.body.id}`, { disabled: true });
     const res = await env.app.inject({ method: 'POST', url: '/api/auth/login', payload: { login: 'viewer1', password: 'Viewer-Pass-123' } });

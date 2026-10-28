@@ -37,7 +37,8 @@ export function maskProxy(proxy) {
 
 function statusPlan(r) {
   const plan = { active: 188, session_expired: 24, bad_credentials: 8, error: 12, disabled: 15, new: 30, need_code: 5, need_manual: 3, logging_in: 3, checking: 3, syncing: 9 };
-  const list = Object.entries(plan).flatMap(([status, n]) => Array(n).fill(status));
+  const scale = Math.max(1, Number(process.env.MOCK_SCALE ?? 1)); // MOCK_SCALE=4 -> ~1200 logins
+  const list = Object.entries(plan).flatMap(([status, n]) => Array(Math.round(n * scale)).fill(status));
   for (let i = list.length - 1; i > 0; i -= 1) { const j = Math.floor(r() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
   return list;
 }

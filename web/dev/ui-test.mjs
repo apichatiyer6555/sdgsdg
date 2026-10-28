@@ -1,5 +1,5 @@
 // Dev-only end-to-end check of the SPA against the mock server.
-//   node web/dev/ui-test.mjs            (starts its own mock on :4012, writes screenshots to /tmp/verify/)
+//   node web/dev/ui-test.mjs            (starts its own mock on a random port, writes screenshots to /tmp/verify/)
 //   MOCK_URL=http://localhost:4010 node web/dev/ui-test.mjs   (use an already running mock)
 //   SHOTS=/some/dir  SECTIONS=accounts,drawer  to narrow the run
 import { spawn } from 'node:child_process';
@@ -17,10 +17,12 @@ fs.mkdirSync(SHOTS, { recursive: true });
 let server = null;
 let BASE = process.env.MOCK_URL;
 if (!BASE) {
-  const port = 4012;
+  const port = 4100 + Math.floor(Math.random() * 800);
   server = spawn(process.execPath, [path.join(here, 'mock-server.js'), String(port)], { stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, MOCK_DELAY: '15' } });
   await new Promise((resolve, reject) => { server.stdout.on('data', (d) => String(d).includes('Zaliv mock') && resolve()); server.on('error', reject); setTimeout(() => reject(new Error('mock did not start')), 8000); });
   BASE = `http://localhost:${port}`;
+  process.on('exit', () => server.kill());
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
 }
 
 /* ---------- bookkeeping ---------- */
@@ -42,7 +44,7 @@ const watch = (p) => {
     const text = `${m.type()}: ${m.text()} @ ${m.location().url}`;
     if (!allowed.some((re) => re.test(text))) problems.push(text);
   });
-  p.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+  p.on('pageerror', (e) => problems.push(`pageerror: ${e.message}\n${(e.stack ?? '').split('\n').slice(1, 5).join('\n')}`));
   p.on('requestfailed', (r) => { const t = `requestfailed: ${r.url()} ${r.failure()?.errorText}`; if (!allowed.some((re) => re.test(t))) problems.push(t); });
 };
 watch(page);
@@ -68,8 +70,11 @@ async function loginAndChange() {
   await page.waitForSelector('.shell');
 }
 const goto = async (route) => { await page.evaluate((r) => { location.hash = r; }, route); await page.waitForTimeout(150); };
-const rows = () => page.locator('.accounts-table tbody tr');
-async function waitAccounts() { await page.waitForSelector('.accounts-table tbody tr'); }
+// rows are virtualized: count logical rows through aria-rowcount, DOM rows only for what is on screen
+const rows = () => page.locator('.accounts-table tbody tr:not(.v-spacer)');
+const rowCount = async (sel = '.accounts-table') => Number(await page.locator(sel).getAttribute('aria-rowcount')) - 1;
+const waitRows = (n) => page.waitForFunction((x) => Number(document.querySelector('.accounts-table').getAttribute('aria-rowcount')) - 1 === x, n, { timeout: 6000 });
+async function waitAccounts() { await page.waitForSelector('.accounts-table tbody tr:not(.v-spacer)'); }
 const chip = (text) => page.locator('.chips .chip', { hasText: text }).first();
 const chipCount = async (text) => Number((await chip(text).locator('b').textContent()).replace(/\s/g, ''));
 const section = (name) => !ONLY || ONLY.has(name);
@@ -117,13 +122,13 @@ if (section('dashboard')) {
   ok((await page.locator('.status-pill').textContent()).includes('Браузер готов'), 'sidebar status pill shows browser ready');
   ok((await page.locator('.nav-badge').textContent()).trim() !== '', 'accounts nav badge counts logins waiting for the operator');
   await page.locator('.kpi-stat', { hasText: 'Активных' }).click();
-  await page.waitForSelector('.accounts-table tbody tr');
+  await page.waitForSelector('.accounts-table tbody tr:not(.v-spacer)');
   ok(page.url().includes('status=active'), 'KPI tile navigates to the filtered list');
   ok((await chip('Активные').getAttribute('aria-pressed')) === 'true', 'status chip reflects the URL filter');
   await goto('#/dashboard');
   await page.waitForSelector('.kpi-grid');
   await page.locator('.kpi-stat', { hasText: 'Проблемы' }).first().click();
-  await page.waitForSelector('.ads-table tbody tr');
+  await page.waitForSelector('.ads-table tbody tr:not(.v-spacer)');
   ok(page.url().includes('state=issue'), 'cabinet KPI navigates to filtered ad accounts');
 }
 
@@ -133,31 +138,44 @@ if (section('accounts')) {
   await goto('#/accounts');
   await waitAccounts();
   await page.waitForTimeout(300);
-  const total = await rows().count();
+  const total = await rowCount();
   ok(total === 300, `300 account rows rendered (got ${total})`);
   await shot(page, '04-accounts-dark');
+  const domRows = await rows().count();
+  ok(domRows > 8 && domRows < 80, `only a window of rows is in the DOM (${domRows} of 300)`);
+  const rowH = await rows().first().evaluate((el) => el.getBoundingClientRect().height);
+  ok(Math.abs(rowH - 60) < 0.5, `rows have the fixed height the virtualizer assumes (${rowH}px)`);
+  await page.evaluate(() => { document.querySelector('.table-wrap').scrollTop = 1e6; });
+  await page.waitForTimeout(250);
+  const lastLabel = (await rows().last().locator('.acc-name').textContent()).trim();
+  const lastAcc = await page.evaluate(async () => (await import('/lib/store.js')).accounts.items.at(-1).label);
+  ok(lastLabel === lastAcc, `scrolling to the bottom renders the last account (${lastLabel})`);
+  await page.evaluate(() => { document.querySelector('.table-wrap').scrollTop = 0; });
+  await page.waitForTimeout(150);
   const counts = { all: await chipCount('Все'), active: await chipCount('Активные'), code: await chipCount('Нужен код') };
   ok(counts.all === 300 && counts.active > 100 && counts.code === 5, `status chips carry counts ${JSON.stringify(counts)}`);
   await chip('Нужен код').click();
-  ok((await rows().count()) === 5, 'filter "Нужен код" leaves 5 rows');
+  ok((await rowCount()) === 5, 'filter "Нужен код" leaves 5 rows');
   ok((await page.locator('.accounts-table .btn.cta.pulse').count()) === 5, 'every need_code row has the pulsing "Ввести код" button');
   ok(page.url().includes('status=need_code'), 'filter is kept in the URL');
+  const codeHeights = await rows().evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
+  ok(codeHeights.length === 5 && codeHeights.every((v) => v === 60), `need-code rows keep the fixed 60px height (${[...new Set(codeHeights)]})`);
   await chip('Все').click();
   await page.fill('input[data-search]', 'aurora');
   await page.waitForTimeout(350);
-  const aurora = await rows().count();
+  const aurora = await rowCount();
   ok(aurora > 0 && aurora < 60, `search "aurora" narrows rows (${aurora})`);
   await page.fill('input[data-search]', 'zzzz-nothing');
   await page.waitForTimeout(350);
   ok((await page.locator('.state-box .empty h3').textContent()).includes('Ничего не найдено'), 'empty state for no matches');
   await page.locator('.state-box .btn', { hasText: 'Сбросить' }).click();
-  ok((await rows().count()) === 300, 'reset filters brings back all rows');
+  ok((await rowCount()) === 300, 'reset filters brings back all rows');
   await page.locator('.toolbar select').first().selectOption({ index: 1 });
-  const byTag = await rows().count();
+  const byTag = await rowCount();
   ok(byTag > 0 && byTag < 300, `tag select filters rows (${byTag})`);
   await page.locator('.toolbar select').first().selectOption({ index: 0 });
   await page.locator('.toolbar select').nth(1).selectOption({ index: 1 });
-  const byClient = await rows().count();
+  const byClient = await rowCount();
   ok(byClient > 0 && byClient < 300, `client select filters rows (${byClient})`);
   await page.locator('.toolbar select').nth(1).selectOption({ index: 0 });
   // sorting
@@ -227,7 +245,8 @@ if (section('add')) {
   await page.locator('.panel.modal button[type=submit]').click();
   await page.waitForSelector('.panel.modal', { state: 'detached' });
   await waitToast('Аккаунт добавлен');
-  ok((await rows().count()) === 301, 'new account appears in the table');
+  await waitRows(301);
+  ok((await rowCount()) === 301, 'new account appears in the table');
   // auto code dialog: login was started from this page -> code requested after ~3s
   await page.waitForSelector('.panel.modal .code-input', { timeout: 8000 });
   ok(true, 'code dialog auto-opens for a login started on this page');
@@ -238,18 +257,21 @@ if (section('add')) {
   // session tab
   await page.locator('.toolbar .btn.primary', { hasText: 'Добавить' }).click();
   await page.getByRole('tab', { name: 'Сессия (cookies)' }).click();
-  await page.locator('.panel.modal textarea').first().fill('not cookies');
-  await page.locator('.panel.modal button[type=submit]').click();
-  await page.waitForTimeout(100);
+  const pane = '.panel.modal .tab-panel:not([hidden])';
+  await page.locator(`${pane} textarea`).first().fill('not cookies');
   allow(/400.*\/api\/accounts/);
-  await page.locator('.panel.modal textarea').first().fill('[{"name":"sessionid","value":"abcdef0123456789","domain":".tiktok.com"}]');
+  await page.locator('.panel.modal button[type=submit]').click();
+  await page.waitForSelector(`${pane} .alert.err`);
+  ok((await page.locator(`${pane} .alert.err`).textContent()).includes('cookies'), 'unrecognised cookies are rejected with the server message');
+  await page.locator(`${pane} textarea`).first().fill('[{"name":"sessionid","value":"abcdef0123456789","domain":".tiktok.com"}]');
   await page.locator('.panel.modal button[type=submit]').click();
   await page.waitForSelector('.panel.modal', { state: 'detached' });
-  ok((await rows().count()) === 302, 'session account added');
+  await waitRows(302);
+  ok((await rowCount()) === 302, 'session account added');
   // import tab
   await page.locator('.toolbar .btn.primary', { hasText: 'Добавить' }).click();
   await page.getByRole('tab', { name: 'Массовый импорт' }).click();
-  await page.locator('.panel.modal textarea').first().fill('# comment\nimp1@mail.test:pass1\nimp2@mail.test;pass2\nimp3@mail.test|pass3|socks5://u:p@1.1.1.1:1080|nutra,vip|Aurora Media\nbroken-line-without-password\nimp1@mail.test:dup');
+  await page.locator('.panel.modal .tab-panel:not([hidden]) textarea').first().fill('# comment\nimp1@mail.test:pass1\nimp2@mail.test;pass2\nimp3@mail.test|pass3|socks5://u:p@1.1.1.1:1080|nutra,vip|Aurora Media\nbroken-line-without-password\nimp1@mail.test:dup');
   await page.waitForTimeout(100);
   ok((await page.locator('.import-count').textContent()).includes('5'), 'live line counter counts 5 lines');
   await page.locator('.panel.modal button[type=submit]').click();
@@ -259,7 +281,7 @@ if (section('add')) {
   await page.keyboard.press('Escape');
   await page.waitForSelector('.panel.modal', { state: 'detached' });
   await page.waitForTimeout(300);
-  ok((await rows().count()) === 305, 'imported accounts appear (3 new)');
+  ok((await rowCount()) === 305, 'imported accounts appear (3 new)');
 }
 
 /* ======================================================================= */
@@ -290,36 +312,33 @@ if (section('dialogs')) {
   await shot(page, '10-remote-browser-dark');
   const inputs = [];
   page.on('request', (r) => { if (r.url().includes('/browser/input') && r.method() === 'POST') inputs.push(JSON.parse(r.postData())); });
+  const waitInput = async (pred, ms = 3000) => { const end = Date.now() + ms; while (Date.now() < end) { if (inputs.some(pred)) return true; await sleep(50); } return false; };
   const box = await page.locator('.rb-img').boundingBox();
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  await page.waitForTimeout(300);
+  await waitInput((i) => i.type === 'click');
   const click = inputs.find((i) => i.type === 'click');
   ok(click && Math.abs(click.x - 640) <= 3 && Math.abs(click.y - 400) <= 3, `click is mapped to browser pixels (${click?.x},${click?.y})`);
   await page.mouse.click(box.x + 1, box.y + 1);
   await page.waitForTimeout(200);
   await page.locator('.rb-side input[aria-label="Текст"]').fill('hello');
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(200);
-  ok(inputs.some((i) => i.type === 'type' && i.text === 'hello'), 'text is sent with type');
+  ok(await waitInput((i) => i.type === 'type' && i.text === 'hello'), 'text is sent with type');
   await page.locator('.rb-side .btn', { hasText: 'Enter' }).click();
   await page.locator('.rb-side .btn', { hasText: 'Вниз' }).click();
-  await page.waitForTimeout(200);
-  ok(inputs.some((i) => i.type === 'key' && i.key === 'Enter') && inputs.some((i) => i.type === 'scroll' && i.dy === 400), 'key and scroll buttons send input');
+  ok((await waitInput((i) => i.type === 'key' && i.key === 'Enter')) && (await waitInput((i) => i.type === 'scroll' && i.dy === 400)), 'key and scroll buttons send input');
   await page.locator('.rb-img').hover();
   await page.mouse.wheel(0, 300);
-  await page.waitForTimeout(400);
-  ok(inputs.some((i) => i.type === 'scroll' && i.dy === 300 && typeof i.x === 'number'), 'mouse wheel over the image sends scroll');
+  await waitInput((i) => i.type === 'scroll' && i.dy === 300);
+  ok(inputs.some((i) => i.type === 'scroll' && i.dy === 300 && typeof i.x === 'number'), `mouse wheel over the image sends scroll${inputs.some((i) => i.type === 'scroll' && i.dy === 300) ? '' : ` (got ${JSON.stringify(inputs.filter((i) => i.type === 'scroll'))})`}`);
   await page.locator('.rb-img').focus();
   await page.keyboard.type('ab');
-  await page.waitForTimeout(400);
-  ok(inputs.some((i) => i.type === 'type' && i.text === 'ab'), 'typing with the image focused is forwarded');
+  ok(await waitInput((i) => i.type === 'type' && i.text === 'ab'), 'typing with the image focused is forwarded');
   await page.getByPlaceholder('https://ads.tiktok.com/…').fill('example.com');
   await page.keyboard.press('Enter');
   ok((await page.locator('.rb-side .form-error').textContent()).includes('tiktok.com'), 'navigation outside tiktok.com is blocked client-side');
   await page.getByPlaceholder('https://ads.tiktok.com/…').fill('ads.tiktok.com/i18n/campaign');
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(250);
-  ok(inputs.some((i) => i.type === 'navigate' && i.url.startsWith('https://ads.tiktok.com/')), 'navigate request uses a normalised https URL');
+  ok(await waitInput((i) => i.type === 'navigate' && i.url.startsWith('https://ads.tiktok.com/')), 'navigate request uses a normalised https URL');
   await page.waitForTimeout(2300);
   ok((await page.locator('.rb-url').textContent()).includes('ads.tiktok.com/i18n/campaign'), 'address line follows BrowserInfo.url');
   await page.keyboard.press('Escape');
@@ -327,7 +346,7 @@ if (section('dialogs')) {
   ok(true, 'Esc closes the remote browser dialog');
   // inactive state: an active account without a browser
   await chip('Активные').click();
-  await page.locator('.accounts-table tbody tr').first().locator('[data-act=browser]').click();
+  await rows().first().locator('[data-act=browser]').click();
   await page.waitForSelector('.rb-overlay:not([hidden])');
   ok((await page.locator('.rb-overlay').textContent()).includes('Браузер не запущен'), 'inactive account shows the "browser not running" state');
   await shot(page, '11-remote-browser-inactive-dark');
@@ -380,7 +399,7 @@ if (section('drawer')) {
     await page.locator('.panel.modal .btn', { hasText: 'Скачать' }).click();
   })()]);
   ok(/zaliv-session-.*\.json$/.test(dl.suggestedFilename()), `owner can export cookies (${dl.suggestedFilename()})`);
-  await page.locator('.panel.drawer textarea').fill('sessionid=abcdef0123456789; sid_tt=zzzzzzzzzzzz');
+  await page.locator('.panel.drawer .tab-panel:not([hidden]) textarea').fill('sessionid=abcdef0123456789; sid_tt=zzzzzzzzzzzz');
   await page.locator('.panel.drawer .btn', { hasText: 'Заменить и проверить' }).click();
   await waitToast('Cookies заменены');
   await shot(page, '16-drawer-session-dark');
@@ -404,22 +423,114 @@ if (section('drawer')) {
 }
 
 /* ======================================================================= */
+if (section('actions')) {
+  console.log('# row / bulk / dashboard actions');
+  await goto('#/accounts');
+  await waitAccounts();
+  await chip('Активные').click();
+  await rows().filter({ has: page.locator('[data-act=check]:not([disabled])') }).first().locator('[data-act=check]').click();
+  await waitToast('Проверка сессии запущена');
+  ok(true, 'row "Проверить сессию" starts a check');
+  await rows().filter({ has: page.locator('[data-act=sync]:not([disabled])') }).first().locator('[data-act=sync]').click();
+  await waitToast('Синхронизация запущена');
+  ok(true, 'row "Синхронизировать" starts a sync');
+  await chip('Все').click();
+  // bulk login for a login without a stored password -> per-account failure summary
+  const target = await page.evaluate(async () => { const { accounts } = await import('/lib/store.js'); const a = accounts.items.find((x) => !x.hasPassword && !x.busy && x.status !== 'disabled'); return a ? { login: a.login } : null; });
+  ok(!!target, 'fixture has a login without a stored password');
+  await page.fill('input[data-search]', target.login);
+  await page.waitForTimeout(350);
+  await rows().first().locator('input[data-act=select]').check();
+  await page.locator('.bulk-bar .btn', { hasText: 'Войти' }).click();
+  await page.waitForSelector('.panel.modal .dtable');
+  ok((await page.locator('.panel.modal').textContent()).includes('Нет сохранённого пароля'), 'bulk failure summary lists the reason per account');
+  await shot(page, '25-bulk-failures-dark');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.panel.modal', { state: 'detached' });
+  await page.locator('.bulk-bar .btn', { hasText: 'Клиент' }).click();
+  await page.locator('.panel.modal input').fill('QA Client');
+  await page.keyboard.press('Enter');
+  await waitToast('Назначение клиента');
+  await page.waitForTimeout(250);
+  ok((await rows().first().textContent()).includes('QA Client'), 'bulk client assignment shows up in the row');
+  await page.locator('.bulk-bar .btn', { hasText: 'Отключить' }).click();
+  await waitToast('Отключение');
+  await page.waitForTimeout(250);
+  ok((await rows().first().textContent()).includes('Отключён'), 'bulk disable switches the login off');
+  const before = await rowCount();
+  await page.locator('.bulk-bar .btn', { hasText: 'Удалить' }).click();
+  await page.locator('.panel.modal .btn', { hasText: 'Отмена' }).click();
+  await page.waitForSelector('.panel.modal', { state: 'detached' });
+  ok((await rowCount()) === before, 'cancelled bulk delete keeps the row');
+  await page.locator('.bulk-bar .btn', { hasText: 'Удалить' }).click();
+  await page.locator('.panel.modal .btn.danger').click();
+  await waitToast('Удаление');
+  await page.waitForSelector('.state-box .empty');
+  ok(true, 'confirmed bulk delete removes the login');
+  await page.fill('input[data-search]', '');
+  await page.waitForTimeout(300);
+  // drawer quick actions + drill-down links
+  await chip('Активные').click();
+  await rows().filter({ has: page.locator('[data-act=check]:not([disabled])') }).first().locator('.acc-name').click();
+  await page.waitForSelector('.panel.drawer .drawer-actions .btn');
+  await page.locator('.panel.drawer .drawer-actions .btn', { hasText: 'Проверить' }).click();
+  await waitToast('Проверка сессии запущена');
+  await page.getByRole('tab', { name: /Журнал/ }).click();
+  const jlink = page.locator('.panel.drawer a', { hasText: 'Весь журнал' });
+  if (await jlink.count()) { await jlink.click(); await page.waitForSelector('.journal-table tbody tr'); ok(page.url().includes('#/journal?accountId='), 'drawer links to the journal filtered by login'); }
+  // dashboard quick actions
+  await goto('#/dashboard');
+  await page.waitForSelector('.attn-row');
+  await page.locator('.attn-row .btn.cta', { hasText: 'Ввести код' }).first().click();
+  await page.waitForSelector('.panel.modal .code-input');
+  ok(true, 'dashboard "Ввести код" opens the code dialog');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.panel.modal', { state: 'detached' });
+  await page.locator('.attn-row .btn', { hasText: 'Кампании' }).first().click();
+  await page.waitForSelector('.panel.drawer');
+  ok(true, 'dashboard ad-account row opens the campaigns drawer');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.panel.drawer', { state: 'detached' });
+  await page.locator('.topbar .btn', { hasText: 'Синхронизировать всё' }).click();
+  await waitToast('В очередь поставлено');
+  ok((await toastText()).includes('аккаунт'), 'sync-all toast reports the queued count');
+  // remote browser: cancel a login that waits for manual action
+  await goto('#/accounts'); await waitAccounts();
+  await chip('Нужно вмешательство').click();
+  await rows().first().locator('.btn.cta').click();
+  await page.waitForSelector('.rb-stage');
+  await page.locator('.panel.modal .btn', { hasText: 'Отмена входа' }).click();
+  await waitToast('Операция остановлена');
+  await page.waitForSelector('.rb-overlay:not([hidden])', { timeout: 6000 });
+  ok(true, 'cancelling the login from the remote browser dialog ends the session');
+  await page.keyboard.press('Escape');
+}
+
+/* ======================================================================= */
 if (section('ads')) {
   console.log('# ad accounts');
   await goto('#/ad-accounts');
-  await page.waitForSelector('.ads-table tbody tr');
+  await page.waitForSelector('.ads-table tbody tr:not(.v-spacer)');
   await page.waitForTimeout(300);
-  const total = await page.locator('.ads-table tbody tr').count();
+  const total = await rowCount('.ads-table');
   ok(total > 350, `ad account rows rendered (${total})`);
   await shot(page, '19-ads-dark');
+  const adDom = await page.locator('.ads-table tbody tr:not(.v-spacer)').count();
+  ok(adDom > 8 && adDom < 90, `ad accounts are windowed (${adDom} of ${total} rows in the DOM)`);
+  await page.evaluate(() => { document.querySelector('.table-wrap').scrollTop = 1e7; });
+  await page.waitForTimeout(300);
+  ok((await page.locator(`.ads-table tbody tr[aria-rowindex="${total + 1}"]`).count()) === 1, 'scrolling to the bottom renders the last ad account');
+  await page.evaluate(() => { document.querySelector('.table-wrap').scrollTop = 0; });
+  await page.waitForTimeout(200);
   await page.locator('th .th-btn', { hasText: 'Расход 7д' }).click();
-  const spends = await page.locator('.ads-table tbody tr td:nth-child(6)').allTextContents();
+  const spends = await page.locator('.ads-table tbody tr:not(.v-spacer) td:nth-child(6)').allTextContents();
   const toNum = (s) => Number(s.replace(/[^\d,]/g, '').replace(',', '.'));
   ok(spends.length > 10 && toNum(spends[0]) >= toNum(spends[1]), 'sorting by spend puts the biggest first');
   await chip('Проблемы').click();
-  const issue = await page.locator('.ads-table tbody tr').count();
+  const issue = await rowCount('.ads-table');
   ok(issue > 0 && issue < total, `state chip filters (${issue})`);
-  ok((await page.locator('.ads-table tbody tr .pill', { hasText: 'Не доставляется' }).count()) === issue, 'all remaining rows are "Не доставляется"');
+  const rendered = await page.locator('.ads-table tbody tr:not(.v-spacer)').count();
+  ok(rendered > 0 && (await page.locator('.ads-table tbody tr .pill', { hasText: 'Не доставляется' }).count()) === rendered, 'all rendered rows are "Не доставляется"');
   ok((await page.locator('.totals').textContent()).includes('Расход 7д'), 'totals line shows spend');
   await page.locator('.toolbar select').nth(2).selectOption({ index: 1 }); // currency
   ok(page.url().includes('currency='), 'currency filter is stored in the URL');
@@ -427,7 +538,7 @@ if (section('ads')) {
   await chip('Все').click();
   await page.fill('input[data-search]', 'nutra');
   await page.waitForTimeout(300);
-  const nutra = await page.locator('.ads-table tbody tr').count();
+  const nutra = await rowCount('.ads-table');
   ok(nutra > 0 && nutra < total, `search filters ad accounts (${nutra})`);
   await page.fill('input[data-search]', '');
   await page.waitForTimeout(300);
@@ -437,7 +548,7 @@ if (section('ads')) {
   const text = fs.readFileSync(csvPath, 'utf8');
   ok(text.startsWith('\uFEFFКабинет;ID кабинета;'), 'CSV has BOM and ";" delimiter');
   ok(text.split('\r\n').length > 350, 'CSV contains all filtered rows');
-  await page.locator('.ads-table tbody tr').first().locator('.link-btn').click();
+  await page.locator('.ads-table tbody tr:not(.v-spacer)').first().locator('.link-btn').click();
   await page.waitForSelector('.campaigns tbody tr, .empty');
   await page.waitForTimeout(250);
   await shot(page, '20-campaigns-dark');
@@ -499,6 +610,7 @@ if (section('settings')) {
   const userRow = page.locator('.users-table tbody tr', { hasText: 'qa-user' });
   await userRow.locator('select').selectOption('viewer');
   await waitToast('Роль изменена');
+  await page.waitForTimeout(400); // the table refreshes after the change
   await userRow.locator('[aria-haspopup=menu]').click();
   await page.locator('.menu .menu-item', { hasText: 'Отключить' }).click();
   await waitToast('Пользователь отключён');
@@ -525,9 +637,9 @@ if (section('theme')) {
   await page.waitForSelector('.panel.drawer [role=tablist]');
   await shot(page, '32-drawer-light');
   await page.keyboard.press('Escape');
-  await goto('#/ad-accounts'); await page.waitForSelector('.ads-table tbody tr'); await page.waitForTimeout(250);
+  await goto('#/ad-accounts'); await page.waitForSelector('.ads-table tbody tr:not(.v-spacer)'); await page.waitForTimeout(250);
   await shot(page, '33-ads-light');
-  await page.locator('.ads-table tbody tr').first().locator('.link-btn').click();
+  await page.locator('.ads-table tbody tr:not(.v-spacer)').first().locator('.link-btn').click();
   await page.waitForSelector('.campaigns tbody tr, .panel.drawer .empty');
   await page.waitForTimeout(250);
   await shot(page, '34-campaigns-light');
@@ -547,10 +659,12 @@ if (section('theme')) {
   await page.setViewportSize({ width: 1024, height: 768 });
   await goto('#/accounts'); await waitAccounts(); await page.waitForTimeout(300);
   ok((await page.locator('.sidebar').boundingBox()).width < 100, 'sidebar collapses to icons under 1100px');
+  const narrow = await rows().evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
+  ok(narrow.length > 5 && narrow.every((v) => v === 60), `row height stays 60px at 1024px (${[...new Set(narrow)]})`);
   await shot(page, '40-accounts-1024');
   await goto('#/dashboard'); await page.waitForSelector('.kpi-grid'); await page.waitForTimeout(300);
   await shot(page, '41-dashboard-1024');
-  await goto('#/ad-accounts'); await page.waitForSelector('.ads-table tbody tr'); await page.waitForTimeout(300);
+  await goto('#/ad-accounts'); await page.waitForSelector('.ads-table tbody tr:not(.v-spacer)'); await page.waitForTimeout(300);
   await shot(page, '42-ads-1024');
   await page.setViewportSize({ width: 1920, height: 1080 });
   await goto('#/accounts'); await waitAccounts(); await page.waitForTimeout(300);
@@ -582,6 +696,14 @@ if (section('viewer')) {
   await goto('#/settings'); await page.waitForSelector('.sys-grid');
   ok((await page.locator('.users-table').count()) === 0, 'viewer: no users section');
   ok(await page.locator('input[type=number]').isDisabled(), 'viewer: auto-sync settings are disabled');
+  // session loss: the next API call answers 401 -> login screen with a notice
+  await goto('#/accounts'); await waitAccounts();
+  await context.clearCookies();
+  allow(/401.*\/api\/accounts/);
+  await page.locator('.toolbar .btn', { hasText: 'Обновить' }).click();
+  await page.waitForSelector('.auth-card .alert.info');
+  ok((await page.locator('.auth-card .alert.info').textContent()).includes('Сессия завершилась'), '401 during work returns to the login screen with a notice');
+  await shot(page, '52-session-lost');
 }
 
 /* ---------- report ---------- */

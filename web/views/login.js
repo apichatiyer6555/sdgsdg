@@ -84,6 +84,7 @@ export function showForcedChange({ user, onDone, onLogout }) {
       busy(false);
     }
   } },
+  h('input', { type: 'text', name: 'username', value: user?.login ?? '', autocomplete: 'username', readOnly: true, tabindex: '-1', 'aria-hidden': 'true', class: 'sr-only' }),
   h('div', { class: 'auth-card-head' }, h('h2', null, 'Смените пароль'),
     h('p', null, `${user?.login ? `${user.login}, для` : 'Для'} безопасности замените временный пароль на свой. Минимум 10 символов.`)),
   errorSlot,

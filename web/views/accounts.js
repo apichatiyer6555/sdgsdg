@@ -1,5 +1,5 @@
 // «Аккаунты»: the main screen. Filters are client-side over the full list, rows are patched in place on polling.
-import { h, fill, debounce, plural } from '../lib/dom.js';
+import { h, fill, debounce } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
 import { accounts, on, canEdit, loadAccounts, accountSig } from '../lib/store.js';
 import { chipBar, openMenu, emptyState, errorState, skeletonRows, reportError } from '../lib/ui.js';
@@ -7,7 +7,8 @@ import { selectEl, textInput } from '../lib/forms.js';
 import { syncHash } from '../lib/router.js';
 import { STATUS_FILTERS, ATTENTION_FILTER, STATUS_ORDER } from '../lib/status.js';
 import { spinner } from '../lib/status.js';
-import { COLUMNS, buildRow, reconcile } from './accounts-rows.js';
+import { createVirtualBody } from '../lib/vtable.js';
+import { columnsFor, buildRow } from './accounts-rows.js';
 import { createBulkBar } from './accounts-bulk.js';
 import { loginAccount, checkAccount, syncAccount, deleteAccount } from './account-actions.js';
 import { openAddDialog } from './account-add.js';
@@ -16,6 +17,7 @@ import { openBrowserDialog } from './browser-dialog.js';
 import { openAccountDrawer } from './account-drawer.js';
 
 export const layout = 'fill';
+const ROW_H = 60; // keep in sync with `.accounts-table td { height }`
 
 const selection = new Set(); // survives navigation inside the session
 const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
@@ -29,12 +31,13 @@ const SORTERS = {
 
 export function mount(root, { params }) {
   const edit = canEdit();
+  const cols = columnsFor(edit);
   const S = { q: params.get('q') ?? '', status: params.get('status') ?? 'all', tag: params.get('tag') ?? '', client: params.get('client') ?? '', sort: { key: '', dir: 1 } };
   const rowCache = new Map(); // id -> { sig, el }
-  let visibleIds = [], lastPicked = null, raf = 0, refreshing = false;
+  let visibleIds = [], lastPicked = null, raf = 0, refreshing = false, alive = true;
 
   /* ----- toolbar ----- */
-  const search = textInput({ type: 'search', value: S.q, placeholder: 'Поиск: название, логин, клиент, тег', 'aria-label': 'Поиск по аккаунтам', 'data-search': '', autocomplete: 'off' });
+  const search = textInput({ type: 'search', value: S.q, placeholder: 'Поиск: аккаунт, логин, клиент, тег', 'aria-label': 'Поиск по аккаунтам', 'data-search': '', autocomplete: 'off' });
   const tagSel = h('span');
   const clientSel = h('span');
   const chips = chipBar({ items: [], value: S.status, label: 'Фильтр по статусу', onChange: (id) => { S.status = id; changed(); } });
@@ -47,10 +50,10 @@ export function mount(root, { params }) {
   paintRefresh();
   const toolbar = h('div', { class: 'toolbar' },
     h('div', { class: 'toolbar-row' },
-      h('div', { class: 'search' }, icon('search', 16), search), tagSel, clientSel, h('span', { class: 'spacer' }), summary, refreshBtn,
+      h('div', { class: 'search' }, icon('search', 16), search), tagSel, clientSel, h('span', { class: 'spacer' }), refreshBtn,
       edit ? h('button', { class: 'btn primary', type: 'button', onclick: () => openAddDialog() }, icon('plus', 16), 'Добавить') : null),
-    chips.el);
-  search.addEventListener('input', debounce(() => { S.q = search.value; changed(); }, 160));
+    h('div', { class: 'chips-row' }, chips.el, h('span', { class: 'spacer' }), summary));
+  search.addEventListener('input', debounce(() => { if (alive) { S.q = search.value; changed(); } }, 160));
 
   const makeSelect = (slot, key, placeholder, label, values) => {
     const options = [{ value: '', label: placeholder }, ...values.map((v) => ({ value: v, label: v }))];
@@ -66,23 +69,24 @@ export function mount(root, { params }) {
   const sortBtn = (col) => {
     const btn = h('button', { class: 'th-btn', type: 'button', onclick: () => {
       S.sort = S.sort.key === col.key ? (S.sort.dir === 1 ? { key: col.key, dir: -1 } : { key: '', dir: 1 }) : { key: col.key, dir: 1 };
-      render();
+      render(true);
     } }, col.label, h('span', { class: 'sort-ico' }));
     return btn;
   };
   const heads = new Map();
-  const thead = h('thead', null, h('tr', null, COLUMNS.map((col) => {
-    const th = h('th', { class: `c-${col.key}${col.num ? ' num' : ''}`, scope: 'col' },
+  const thead = h('thead', null, h('tr', null, cols.map((col) => {
+    const th = h('th', { class: `c-${col.key}${col.num ? ' num' : ''}`, scope: 'col', 'aria-label': col.label === '' ? 'Действия' : null },
       col.key === 'check' ? (edit ? checkAll : null) : col.sort ? sortBtn(col) : col.label);
     heads.set(col.key, th);
     return th;
   })));
   const tbody = h('tbody');
-  const table = h('table', { class: 'dtable accounts-table' }, h('colgroup', null, COLUMNS.map((c) => h('col', { style: c.width ? { width: `${c.width}px` } : null }))), thead, tbody);
+  const table = h('table', { class: 'dtable accounts-table' }, h('colgroup', null, cols.map((c) => h('col', { style: c.width ? { width: `${c.width}px` } : null }))), thead, tbody);
   const stateBox = h('div', { class: 'state-box' });
   const wrap = h('div', { class: 'table-wrap' }, table, stateBox);
   const bulk = createBulkBar({ selection, clear: () => { selection.clear(); paintSelection(); } });
   root.append(toolbar, wrap, bulk.el);
+  const vbody = createVirtualBody({ scroller: wrap, table, tbody, rowHeight: ROW_H, columns: cols.length, renderRow: (a) => rowFor(a) });
 
   /* ----- model ----- */
   const haystack = (a) => `${a.label} ${a.login} ${a.client} ${a.tags.join(' ')} ${a.notes}`.toLowerCase();
@@ -105,6 +109,10 @@ export function mount(root, { params }) {
     const sig = accountSig(a.id);
     let entry = rowCache.get(a.id);
     if (!entry || entry.sig !== sig) { entry = { sig, el: buildRow(a, edit) }; rowCache.set(a.id, entry); }
+    const on = selection.has(a.id);
+    entry.el.classList.toggle('selected', on);
+    const box = entry.el.querySelector('input[data-act="select"]');
+    if (box && box.checked !== on) box.checked = on;
     return entry.el;
   }
 
@@ -123,7 +131,7 @@ export function mount(root, { params }) {
     bulk.update();
   }
 
-  function render() {
+  function render(resetScroll = false) {
     const { list, items } = compute();
     chips.update(items, S.status);
     makeSelectsIfNeeded();
@@ -151,13 +159,13 @@ export function mount(root, { params }) {
     }
     table.hidden = false;
     stateBox.replaceChildren();
-    reconcile(tbody, list.map(rowFor));
+    vbody.setItems(list, { keepScroll: !resetScroll });
     paintSelection();
   }
 
   let metaSig = '';
   function makeSelectsIfNeeded() {
-    const sig = JSON.stringify([accounts.tags, accounts.clients, S.tag, S.client]);
+    const sig = JSON.stringify([accounts.tags, accounts.clients]); // not the selected values: rebuilding would drop focus
     if (sig === metaSig) return;
     metaSig = sig;
     makeSelect(tagSel, 'tag', 'Все теги', 'Фильтр по тегу', accounts.tags);
@@ -166,7 +174,7 @@ export function mount(root, { params }) {
 
   function changed() {
     syncHash('accounts', { q: S.q.trim(), status: S.status, tag: S.tag, client: S.client });
-    render();
+    render(true);
   }
   function resetFilters() {
     Object.assign(S, { q: '', status: 'all', tag: '', client: '' });
@@ -217,13 +225,15 @@ export function mount(root, { params }) {
     })[act]?.();
   });
 
-  const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); };
+  const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(false); }); };
   const offs = [on('accounts', schedule), on('accounts:error', schedule)];
   render();
 
   return () => {
+    alive = false;
     offs.forEach((off) => off());
     cancelAnimationFrame(raf);
+    vbody.destroy();
     rowCache.clear();
   };
 }

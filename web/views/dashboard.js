@@ -1,12 +1,12 @@
 // «Обзор»: KPI tiles (links into filtered lists), attention list, recent events, sync status.
-import { h, fill, debounce, fmtTime } from '../lib/dom.js';
+import { h, fill, debounce, fmtTime, plural } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
 import { api } from '../lib/api.js';
 import { accounts, on, canEdit } from '../lib/store.js';
 import { emptyState, errorState, loadingBlock, reportError } from '../lib/ui.js';
 import { routeHref } from '../lib/router.js';
 import { ACCOUNT_STATUS, ATTENTION_STATUSES, adStateChip, levelChip, pill, spinner } from '../lib/status.js';
-import { num, rel, relTime, fmtDateTime } from '../lib/format.js';
+import { num, relTime, fmtDateTime } from '../lib/format.js';
 import { syncAll } from './account-actions.js';
 import { openAccountDrawer } from './account-drawer.js';
 import { openCampaignsDrawer } from './campaigns-drawer.js';
@@ -15,11 +15,11 @@ import { openBrowserDialog } from './browser-dialog.js';
 
 const stat = (label, value, href, tone = '') => h('a', { class: `kpi-stat ${tone}`, href }, h('b', null, num(value)), h('span', null, label));
 
-function kpiCard({ title, glyph, main, href, caption, stats }) {
+function kpiCard({ title, glyph, main, href, caption, stats, body }) {
   return h('section', { class: 'card kpi' },
     h('div', { class: 'kpi-title' }, icon(glyph, 16), title),
     main === null ? null : h('a', { class: 'kpi-main', href }, num(main), h('small', null, caption)),
-    h('div', { class: 'kpi-stats' }, stats));
+    body ?? h('div', { class: 'kpi-stats' }, stats));
 }
 
 function attentionRow(item, edit) {
@@ -54,16 +54,19 @@ export function mount(root) {
       h('div', { class: 'kpi-grid' },
         kpiCard({ title: 'Логины', glyph: 'users', main: d.accounts.total, href: routeHref('accounts'), caption: 'всего', stats: [
           stat('Активных', by.active ?? 0, routeHref('accounts', { status: 'active' }), 'ok'),
-          stat('Требуют внимания', attentionCount, routeHref('accounts', { status: 'attention' }), attentionCount ? 'warn' : '')] }),
+          stat('Требуют внимания', attentionCount, routeHref('accounts', { status: 'attention' }), attentionCount ? 'warn' : ''),
+          stat('Нужен код', by.need_code ?? 0, routeHref('accounts', { status: 'need_code' }), by.need_code ? 'warn' : ''),
+          stat('Отключены', by.disabled ?? 0, routeHref('accounts', { status: 'disabled' }))] }),
         kpiCard({ title: 'Рекламные кабинеты', glyph: 'building', main: d.adAccounts.total, href: routeHref('ad-accounts'), caption: 'всего', stats: [
           stat('Работают', d.adAccounts.delivering, routeHref('ad-accounts', { state: 'delivering' }), 'ok'), stat('Проблемы', d.adAccounts.issue, routeHref('ad-accounts', { state: 'issue' }), d.adAccounts.issue ? 'warn' : ''),
           stat('Выключены', d.adAccounts.paused, routeHref('ad-accounts', { state: 'paused' }), 'info'), stat('Нет рекламы', d.adAccounts.empty, routeHref('ad-accounts', { state: 'empty' })),
           stat('Ошибка', d.adAccounts.error, routeHref('ad-accounts', { state: 'error' }), d.adAccounts.error ? 'err' : '')] }),
         kpiCard({ title: 'Кампании', glyph: 'activity', main: d.campaigns.total, href: routeHref('ad-accounts'), caption: 'всего', stats: [
           stat('Работают', d.campaigns.working, routeHref('ad-accounts', { state: 'delivering' }), 'ok'), stat('Проблемы', d.campaigns.problem, routeHref('ad-accounts', { state: 'issue' }), d.campaigns.problem ? 'warn' : '')] }),
-        kpiCard({ title: 'Расход за 7 дней', glyph: 'dollar', main: null, stats: spend.length ? spend.slice(0, 4).map((m) =>
-          h('a', { class: 'kpi-stat money', href: routeHref('ad-accounts', { currency: m.currency }), title: `Кабинеты в ${m.currency}` }, h('b', null, num(m.amount, m.amount >= 10000 ? 0 : 2)), h('span', null, m.currency)))
-          .concat(spend.length > 4 ? [h('a', { class: 'kpi-stat', href: routeHref('ad-accounts') }, h('b', null, `+${spend.length - 4}`), h('span', null, 'валют'))] : []) : [h('span', { class: 'muted' }, 'Данных о расходе пока нет')] })),
+        kpiCard({ title: 'Расход за 7 дней', glyph: 'dollar', main: null, body: spend.length
+          ? h('div', { class: 'spend-list' }, spend.slice(0, 5).map((m) => h('a', { class: 'spend-row', href: routeHref('ad-accounts', { currency: m.currency }), title: `Кабинеты в ${m.currency}` }, h('b', null, num(m.amount, m.amount >= 100000 ? 0 : 2)), h('span', null, m.currency))),
+            spend.length > 5 ? h('a', { class: 'small', href: routeHref('ad-accounts') }, `и ещё ${spend.length - 5} ${plural(spend.length - 5, 'валюта', 'валюты', 'валют')} — смотреть все`) : null)
+          : h('span', { class: 'muted' }, 'Данных о расходе пока нет') })),
       h('div', { class: 'dash-grid' },
         h('section', { class: 'card attn-card' },
           h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, icon('alert', 16), 'Требует внимания'), d.attention.length ? h('span', { class: 'pill warn' }, d.attention.length >= 50 ? '50+' : d.attention.length) : null),
@@ -88,8 +91,10 @@ export function mount(root) {
 
   async function load(manual = false) {
     try {
-      const next = await api.get('/api/dashboard');
+      const raw = await api.get('/api/dashboard');
       if (!alive) return;
+      const next = { ...raw, accounts: { byStatus: {}, total: 0, ...raw.accounts }, adAccounts: { total: 0, delivering: 0, issue: 0, paused: 0, empty: 0, error: 0, ...raw.adAccounts },
+        campaigns: { total: 0, working: 0, problem: 0, ...raw.campaigns }, attention: raw.attention ?? [], recentEvents: raw.recentEvents ?? [], sync: { running: 0, queued: 0, ...raw.sync } };
       const nextSig = JSON.stringify(next);
       if (nextSig !== sig || !data) { sig = nextSig; data = next; render(); }
     } catch (error) {

@@ -2,7 +2,7 @@
 import { h, toast } from '../lib/dom.js';
 import { api } from '../lib/api.js';
 import { accounts, on, started, upsertAccount } from '../lib/store.js';
-import { openModal, alertBox, reportError } from '../lib/ui.js';
+import { openModal, alertBox } from '../lib/ui.js';
 import { field, textInput } from '../lib/forms.js';
 import { screenLoop } from '../lib/screen-loop.js';
 import { spinner, ACCOUNT_STATUS } from '../lib/status.js';
@@ -16,12 +16,12 @@ export function openCodeDialog(account) {
   const known = dialogs.get(account.id);
   if (known?.open) { known.panel.querySelector('input')?.focus(); return known; }
   const id = account.id;
-  const input = textInput({ class: 'input code-input', inputmode: 'text', autocomplete: 'one-time-code', placeholder: '••••••', maxlength: 12, 'aria-label': 'Код подтверждения', 'data-autofocus': '' });
+  const input = textInput({ class: 'input code-input', inputmode: 'text', autocomplete: 'one-time-code', placeholder: '000000', maxlength: 12, 'aria-label': 'Код подтверждения', 'data-autofocus': '' });
   const notice = h('div');
   const error = h('p', { class: 'form-error', role: 'alert' });
   const img = h('img', { class: 'code-shot', alt: 'Живой вид браузера, в котором идёт вход' });
   const preview = h('div', { class: 'code-preview', hidden: true }, img,
-    h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Так видит страницу браузер, выполняющий вход'), h('span', { class: 'spacer' }),
+    h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Живой вид браузера, где идёт вход'), h('span', { class: 'spacer' }),
       h('button', { class: 'linklike', type: 'button', onclick: () => { dlg.close('browser'); openBrowserDialog(accounts.byId.get(id) ?? account); } }, 'Открыть браузер')));
   const submit = h('button', { class: 'btn primary', type: 'submit', form: `code-form-${id}` }, 'Отправить');
   let stale = false, sending = false;

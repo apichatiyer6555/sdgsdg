@@ -3,7 +3,7 @@ import { h, fill, toast } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
 import { api } from '../lib/api.js';
 import { session, canEdit, isOwner, system, loadSystem, on } from '../lib/store.js';
-import { alertBox, loadingBlock, errorState, reportError } from '../lib/ui.js';
+import { alertBox, loadingBlock, errorState } from '../lib/ui.js';
 import { field, textInput, passwordField, switchField } from '../lib/forms.js';
 import { pill, spinner, ROLE_LABEL } from '../lib/status.js';
 import { num, relTime, uptime, fmtDateTime } from '../lib/format.js';
@@ -19,6 +19,7 @@ function profileSection() {
   const repeat = passwordField({ autocomplete: 'new-password', placeholder: 'Повторите новый пароль' });
   const msg = h('div');
   const btn = h('button', { class: 'btn primary', type: 'submit' }, icon('lock', 15), 'Сменить пароль');
+  const hiddenUser = h('input', { type: 'text', name: 'username', value: user.login, autocomplete: 'username', readOnly: true, tabindex: '-1', 'aria-hidden': 'true', class: 'sr-only' });
   const form = h('form', { class: 'stack', novalidate: true, onsubmit: async (e) => {
     e.preventDefault();
     const problem = !current.input.value ? 'Введите текущий пароль' : next.input.value.length < 10 ? 'Новый пароль должен быть не короче 10 символов'
@@ -32,7 +33,7 @@ function profileSection() {
       toast('Пароль изменён', 'ok');
     } catch (error) { if (!error.silent) fill(msg, alertBox('err', error.message)); }
     btn.disabled = false; btn.replaceChildren(icon('lock', 15), 'Сменить пароль');
-  } }, field('Текущий пароль', current.el, { forId: current.input.id }), h('div', { class: 'grid2' }, field('Новый пароль', next.el, { forId: next.input.id }), field('Повторите', repeat.el, { forId: repeat.input.id })), msg, h('div', { class: 'row' }, btn));
+  } }, hiddenUser, field('Текущий пароль', current.el, { forId: current.input.id }), h('div', { class: 'grid2' }, field('Новый пароль', next.el, { forId: next.input.id }), field('Повторите', repeat.el, { forId: repeat.input.id })), msg, h('div', { class: 'row' }, btn));
   return section('user', 'Профиль', 'Ваша учётная запись и пароль для входа.',
     h('div', { class: 'profile-line' }, h('span', { class: 'avatar big', 'aria-hidden': 'true' }, (user.login || '?').slice(0, 1)), h('div', null, h('b', null, user.login), h('div', { class: 'muted small' }, `${ROLE_LABEL[user.role] ?? user.role} · последний вход ${fmtDateTime(user.lastLoginAt)}`))),
     form);
@@ -78,13 +79,17 @@ function systemSection() {
     if (!s) return;
     const b = s.browser ?? {}, i = b.interactive ?? {}, bg = b.background ?? {}, sc = s.scheduler ?? {}, c = s.counts ?? {};
     fill(body, h('div', { class: 'sys-grid' },
+      h('h3', null, 'Сервер'),
       h('dl', { class: 'kv-list' }, ...row('Версия', s.version), ...row('Аптайм', uptime(s.uptimeSec)), ...row('Node.js', s.node), ...row('Источник TikTok', h('span', { class: 'mono' }, s.tiktokOrigin))),
+      h('h3', null, 'Браузер'),
       h('dl', { class: 'kv-list' },
-        ...row('Браузер', b.ready ? pill('Готов', 'ok', { glyph: 'check' }) : pill('Недоступен', 'err', { glyph: 'x' })), ...row('Режим', b.headless ? 'без окна (headless)' : 'с окном'),
-        ...row('Интерактивные сессии', `${num(i.active)} из ${num(i.max)}`), ...row('Фоновые сессии', `${num(bg.active)} из ${num(bg.max)}, в очереди ${num(bg.queued)}`)),
+        ...row('Состояние', b.ready ? pill('Готов', 'ok', { glyph: 'check' }) : pill('Недоступен', 'err', { glyph: 'x' })), ...row('Режим', b.headless ? 'без окна (headless)' : 'с окном'),
+        ...row('Интерактивные сессии', `${num(i.active)} из ${num(i.max)}`), ...row('Фоновые сессии', `${num(bg.active)} из ${num(bg.max)} · в очереди ${num(bg.queued)}`)),
+      h('h3', null, 'Планировщик'),
       h('dl', { class: 'kv-list' },
-        ...row('Планировщик', sc.enabled ? pill('Включён', 'ok', { glyph: 'check' }) : pill('Выключен', 'muted', { glyph: 'pause' })), ...row('Интервал', sc.enabled ? `каждые ${num(sc.intervalMin)} мин` : '—'),
+        ...row('Автосинхронизация', sc.enabled ? pill('Включена', 'ok', { glyph: 'check' }) : pill('Выключена', 'muted', { glyph: 'pause' })), ...row('Интервал', sc.enabled ? `каждые ${num(sc.intervalMin)} мин` : '—'),
         ...row('Последний запуск', sc.lastRunAt ? relTime(sc.lastRunAt) : '—'), ...row('Следующий', sc.enabled && sc.nextRunAt ? relTime(sc.nextRunAt) : '—'), ...row('Сейчас', sc.running ? 'идёт синхронизация' : 'простаивает')),
+      h('h3', null, 'Данные'),
       h('dl', { class: 'kv-list' }, ...row('Аккаунтов', num(c.accounts)), ...row('Рекламных кабинетов', num(c.adAccounts)), ...row('Кампаний', num(c.campaigns)))));
   };
   draw(system.data);

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 import { toPlaywrightProxy } from '../lib/proxy.js';
 import { toPlaywrightState } from '../lib/cookies.js';
@@ -33,9 +34,17 @@ export class BrowserPool {
     this.interactive = new Semaphore(config.browser.maxInteractive);
     this.background = new Semaphore(config.browser.maxBackground);
     this.contexts = new Set();
+    this.lastError = '';
   }
 
   get ready() { return !!this.browser?.isConnected(); }
+
+  // "Usable": running now, or not started yet but the Chromium binary is there and the last launch did not fail.
+  get available() {
+    if (this.ready) return true;
+    if (this.lastError) return false;
+    try { return existsSync(this.config.browser.executablePath || chromium.executablePath()); } catch { return false; }
+  }
 
   async #launch() {
     const { browser: b } = this.config;
@@ -44,7 +53,8 @@ export class BrowserPool {
     const options = { headless: b.headless, args, proxy: { server: 'per-context' } };
     if (b.executablePath) options.executablePath = b.executablePath;
     else if (b.headless) options.channel = 'chromium'; // full Chromium in new headless mode, not the old headless shell
-    const browser = await chromium.launch(options);
+    const browser = await chromium.launch(options).catch((e) => { this.lastError = String(e.message).split('\n')[0]; throw e; });
+    this.lastError = '';
     browser.on('disconnected', () => { if (this.browser === browser) this.browser = null; });
     this.version = browser.version();
     return browser;

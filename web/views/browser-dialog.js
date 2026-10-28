@@ -2,9 +2,9 @@
 import { h, toast } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
 import { api } from '../lib/api.js';
-import { accounts, on, upsertAccount, canEdit } from '../lib/store.js';
+import { accounts, on, canEdit } from '../lib/store.js';
 import { openModal, alertBox, reportError } from '../lib/ui.js';
-import { field, textInput, checkField } from '../lib/forms.js';
+import { textInput, checkField } from '../lib/forms.js';
 import { screenLoop } from '../lib/screen-loop.js';
 import { accountStatusChip, pill } from '../lib/status.js';
 import { cancelAccount } from './account-actions.js';
@@ -113,22 +113,28 @@ export function openBrowserDialog(account) {
   } }, icon('play', 15), 'Открыть браузер с сессией');
   const closeBtn = h('button', { class: 'btn', type: 'button', onclick: async () => {
     closeBtn.disabled = true;
-    try { await api.post(`/api/accounts/${id}/browser/close`, {}); toast('Браузер закрыт', 'ok'); await refreshInfo(); } catch (error) { reportError(error); }
+    try {
+      await api.post(`/api/accounts/${id}/browser/close`, {});
+      info = { active: false }; hasFrame = false; paint(); // stop polling screenshots right away (they would answer 404)
+      toast('Браузер закрыт', 'ok');
+      await refreshInfo();
+    } catch (error) { reportError(error); }
     paint();
   } }, icon('stop', 15), 'Закрыть браузер');
   const cancelBtn = h('button', { class: 'btn danger', type: 'button', onclick: async () => { await cancelAccount(live()); await refreshInfo(); } }, icon('x', 15), 'Отмена входа');
   const codeBtn = h('button', { class: 'btn cta', type: 'button', onclick: async () => { const { openCodeDialog } = await import('./account-code.js'); dlg.close('code'); openCodeDialog(live()); } }, icon('mail', 15), 'Ввести код');
-  const kv = h('dl', { class: 'rb-kv' });
+  const kv = h('dl', { class: 'rb-kv rb-state' });
   const controls = canEdit() ? [
     section('Адрес', addrForm, addrError), section('Текст', textForm), section('Клавиши и прокрутка', keys),
-    section('Сеанс', h('div', { class: 'row wrap' }, openBtn, closeBtn, cancelBtn, codeBtn)), note
+    section('Сеанс', h('div', { class: 'rb-session' }, openBtn, closeBtn, cancelBtn, codeBtn)), note
   ] : [alertBox('info', 'Режим только для чтения: управлять браузером может администратор.')];
-  const side = h('aside', { class: 'rb-side' }, ...controls, section('Состояние', kv));
+  const side = h('aside', { class: 'rb-side' }, ...controls);
 
   const paint = () => {
     const acc = live(), active = !!info?.active;
     stateSlot.replaceChildren(active ? pill(info.kind === 'login' ? 'Идёт вход' : 'Ручной режим', 'ok', { glyph: 'check' }) : pill('Браузер не запущен', 'muted', { glyph: 'stop' }));
-    urlLine.textContent = active ? info.url || '—' : '';
+    urlLine.textContent = active ? info.url || '—' : 'Браузер не запущен';
+    urlLine.classList.toggle('muted', !active);
     titleLine.textContent = active ? info.title || '' : '';
     if (info?.width && info?.height) stage.style.aspectRatio = `${info.width} / ${info.height}`;
     overlay.hidden = active && hasFrame;
@@ -163,7 +169,8 @@ export function openBrowserDialog(account) {
     headExtra: h('div', { class: 'rb-head' }, stateSlot),
     body: h('div', { class: 'rb-layout' },
       h('div', { class: 'rb-view' }, h('div', { class: 'rb-bar' }, h('div', { class: 'rb-bar-text' }, urlLine, titleLine)), stage,
-        h('p', { class: 'hint' }, 'Клик по картинке — клик в браузере. Когда картинка в фокусе, клавиши и вставка уходят в браузер. Esc закрывает окно.')),
+        h('p', { class: 'hint' }, 'Клик по картинке — клик в браузере. Когда картинка в фокусе, клавиши и вставка уходят в браузер. Esc закрывает окно.'),
+        section('Состояние', kv)),
       side),
     onClose: () => { stopped = true; clearTimeout(infoTimer); clearTimeout(typedTimer); clearTimeout(wheelTimer); loop.stop(); off(); open.delete(id); }
   });

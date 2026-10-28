@@ -1,5 +1,6 @@
 // Shared client state: session, accounts list with adaptive polling, system info, tiny event bus.
 import { api } from './api.js';
+import { normAccount } from './normalize.js';
 
 const listeners = new Map();
 export function on(event, fn) {
@@ -51,7 +52,7 @@ function apply(items, tags, clients) {
 export function loadAccounts() {
   if (loading) return loading;
   loading = api.get('/api/accounts')
-    .then((data) => { accounts.error = ''; apply(data.items ?? [], data.tags ?? [], data.clients ?? []); return accounts; })
+    .then((data) => { accounts.error = ''; apply((data.items ?? []).map(normAccount), data.tags ?? [], data.clients ?? []); return accounts; })
     .catch((error) => { accounts.error = error.message; emit('accounts:error', error); throw error; })
     .finally(() => { loading = null; schedulePoll(); });
   return loading;
@@ -60,6 +61,7 @@ export function loadAccounts() {
 // Apply a server response for one account right away (do not wait for the next poll).
 export function upsertAccount(account) {
   if (!account || account.id === undefined) return;
+  account = normAccount(account);
   const exists = accounts.byId.has(account.id);
   const items = exists ? accounts.items.map((a) => (a.id === account.id ? account : a)) : [...accounts.items, account];
   apply(items, accounts.tags, accounts.clients);

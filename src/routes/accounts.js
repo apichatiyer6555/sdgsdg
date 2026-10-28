@@ -7,6 +7,8 @@ export function accountRoutes(app, ctx) {
   const { accounts, adAccounts, events, ops } = ctx;
   const actor = (req) => req.panel.user.login;
   const id = (req) => intId(req.params.id, 'Аккаунт');
+  // The remote browser shows live logged-in TikTok pages: read-only users must not watch it.
+  const noViewer = (req) => { if (req.panel.user.role === 'viewer') throw forbidden('Удалённый браузер недоступен для роли «наблюдатель».'); };
 
   app.get('/api/accounts', async (req) => {
     const { q, status, tag, client } = req.query || {};
@@ -114,8 +116,9 @@ export function accountRoutes(app, ctx) {
   app.post('/api/accounts/:id/sync', async (req, reply) => reply.code(202).send(ops.startSync(id(req), actor(req))));
 
   // ---- remote browser ----
-  app.get('/api/accounts/:id/browser', async (req) => ops.browserInfo(id(req)));
+  app.get('/api/accounts/:id/browser', async (req) => { noViewer(req); return ops.browserInfo(id(req)); });
   app.get('/api/accounts/:id/browser/screenshot', async (req, reply) => {
+    noViewer(req);
     const image = await ops.screenshot(id(req));
     return reply.header('content-type', 'image/jpeg').header('cache-control', 'no-store').send(image);
   });

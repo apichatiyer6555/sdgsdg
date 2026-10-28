@@ -8,9 +8,12 @@ import { syncHash } from '../lib/router.js';
 import { AD_FILTERS, AD_STATE, AD_STATE_ORDER, REASON_TONE, adStateChip, pill, spinner } from '../lib/status.js';
 import { num, pct, moneyParts, relTime, toCsv } from '../lib/format.js';
 import { sortHead, sortRows } from '../lib/table.js';
+import { normAd } from '../lib/normalize.js';
+import { createVirtualBody } from '../lib/vtable.js';
 import { openCampaignsDrawer } from './campaigns-drawer.js';
 
 export const layout = 'fill';
+const ROW_H = 60; // keep in sync with `.ads-table td { height }`
 
 const COLS = [
   { key: 'name', label: 'Кабинет', sortable: true, width: 236 },
@@ -45,7 +48,7 @@ const CSV_COLS = [
 
 export function mount(root, { params }) {
   const S = { q: params.get('q') ?? '', state: params.get('state') ?? 'all', accountId: params.get('accountId') ?? '', bcId: params.get('bcId') ?? '', currency: params.get('currency') ?? '', sort: { key: 'state', dir: 1 } };
-  let data = null, error = '', alive = true, timer = 0, sig = '', refreshing = false, shown = [];
+  let data = null, error = '', alive = true, timer = 0, sig = '', refreshing = false, shown = [], selectsFor = null;
   const byKey = new Map();
 
   const search = textInput({ type: 'search', value: S.q, placeholder: 'Поиск: кабинет, ID, BC, логин', 'aria-label': 'Поиск по кабинетам', 'data-search': '', autocomplete: 'off' });
@@ -61,12 +64,14 @@ export function mount(root, { params }) {
     h('div', { class: 'toolbar-row' }, h('div', { class: 'search' }, icon('search', 16), search), loginSlot, bcSlot, curSlot, h('span', { class: 'spacer' }), csvBtn, refreshBtn),
     chips.el, totalsLine));
 
-  const head = sortHead(COLS, S.sort, () => render());
+  const head = sortHead(COLS, S.sort, () => render(true));
   const tbody = h('tbody');
   const table = h('table', { class: 'dtable ads-table' }, h('colgroup', null, COLS.map((c) => h('col', { style: { width: `${c.width}px` } }))), head.el, tbody);
   const stateBox = h('div', { class: 'state-box' });
   const wrap = h('div', { class: 'table-wrap' }, table, stateBox);
   root.append(wrap);
+  const rowCache = new Map();
+  const vbody = createVirtualBody({ scroller: wrap, table, tbody, rowHeight: ROW_H, columns: COLS.length, renderRow: (x) => cachedRow(x) });
 
   const hay = (x) => `${x.name} ${x.id} ${x.bcName} ${x.bcId} ${x.accountLabel}`.toLowerCase();
   function compute() {
@@ -91,12 +96,19 @@ export function mount(root, { params }) {
     option(curSlot, 'currency', 'Все валюты', 'Фильтр по валюте', data.currencies.map((c) => ({ value: c, label: c })));
   }
 
+  const keyOf = (x) => `${x.accountId}:${x.id}`;
+  function cachedRow(x) {
+    const hit = rowCache.get(keyOf(x));
+    if (hit?.x === x) return hit.el;
+    const el = row(x);
+    rowCache.set(keyOf(x), { x, el });
+    return el;
+  }
   function row(x) {
-    const key = `${x.accountId}:${x.id}`;
-    byKey.set(key, x);
+    const key = keyOf(x);
     const reasons = x.reasons.slice(0, 2).map((r) => pill(r.count > 1 ? `${r.text} ×${r.count}` : r.text, REASON_TONE[r.kind] ?? 'muted', { className: 'sm', title: r.text }));
     if (x.reasons.length > 2) reasons.push(h('span', { class: 'pill sm', title: x.reasons.slice(2).map((r) => r.text).join(', ') }, `+${x.reasons.length - 2}`));
-    return h('tr', { dataset: { key } },
+    return h('tr', { dataset: { id: key, key } },
       h('td', { class: 'c-name' }, h('div', { class: 'cell2' },
         h('button', { class: 'link-btn ellipsis strong', type: 'button', dataset: { act: 'open' }, title: x.name }, x.name),
         h('span', { class: 'id-line' }, h('span', { class: 'mono muted ellipsis' }, x.id),
@@ -113,9 +125,9 @@ export function mount(root, { params }) {
       h('td', null, relTime(x.syncedAt)));
   }
 
-  function render() {
+  function render(resetScroll = false) {
     if (!data) { table.hidden = true; fill(stateBox, error ? errorState(error, () => load(true)) : skeletonRows(10)); return; }
-    paintSelects();
+    if (selectsFor !== data) { selectsFor = data; paintSelects(); } // only when data changed: rebuilding drops select focus
     const { list, counts } = compute();
     shown = list;
     chips.update(AD_FILTERS.map((f) => ({ ...f, count: counts[f.id] })), S.state);
@@ -127,7 +139,7 @@ export function mount(root, { params }) {
       for (const k of Object.keys(sum)) sum[k] += x.metrics[k] ?? 0;
     }
     const spendParts = moneyParts([...spend].map(([currency, amount]) => ({ currency, amount })));
-    totalsLine.replaceChildren(h('span', null, 'Кабинетов: ', h('b', null, num(list.length)), list.length !== data.items.length ? ` из ${num(data.items.length)}` : ''),
+    fill(totalsLine, h('span', null, 'Кабинетов: ', h('b', null, num(list.length)), list.length !== data.items.length ? ` из ${num(data.items.length)}` : ''),
       h('span', null, 'Расход 7д: ', ...spendParts.flatMap((p, i) => [i ? ' · ' : '', h('b', null, p)])),
       h('span', null, 'Показы: ', h('b', null, num(sum.impressions))), h('span', null, 'Клики: ', h('b', null, num(sum.clicks))), h('span', null, 'Конверсии: ', h('b', null, num(sum.conversions))),
       data.period ? h('span', { class: 'muted' }, `Период: ${data.period.st} — ${data.period.et}`) : null);
@@ -144,12 +156,13 @@ export function mount(root, { params }) {
     table.hidden = false;
     stateBox.replaceChildren();
     byKey.clear();
-    tbody.replaceChildren(...list.map(row));
+    for (const x of list) byKey.set(keyOf(x), x);
+    vbody.setItems(list, { keepScroll: !resetScroll });
   }
 
   function changed() {
     syncHash('ad-accounts', { q: S.q.trim(), state: S.state, accountId: S.accountId, bcId: S.bcId, currency: S.currency });
-    render();
+    render(true);
   }
 
   function exportCsv() {
@@ -172,11 +185,12 @@ export function mount(root, { params }) {
     clearTimeout(timer);
     if (manual) { refreshing = true; paintRefresh(); }
     try {
-      const next = await api.get('/api/ad-accounts');
+      const raw = await api.get('/api/ad-accounts');
       if (!alive) return;
+      const next = { ...raw, items: (raw.items ?? []).map(normAd), bcs: raw.bcs ?? [], currencies: raw.currencies ?? [] };
       const nextSig = JSON.stringify(next);
       error = '';
-      if (nextSig !== sig || !data) { sig = nextSig; data = next; render(); }
+      if (nextSig !== sig || !data) { sig = nextSig; data = next; rowCache.clear(); render(); }
     } catch (err) {
       if (!alive) return;
       if (!data) { error = err.message; render(); } else if (manual) reportError(err);
@@ -187,5 +201,5 @@ export function mount(root, { params }) {
   }
   render();
   load();
-  return () => { alive = false; clearTimeout(timer); };
+  return () => { alive = false; clearTimeout(timer); vbody.destroy(); };
 }

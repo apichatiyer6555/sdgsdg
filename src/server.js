@@ -17,6 +17,7 @@ if (recovered) console.log(`[zaliv] Сброшены статусы прерва
 
 const app = await buildApp(ctx);
 ctx.scheduler.start();
+ctx.pool.getBrowser().then((b) => console.log(`[zaliv] Chromium ${b.version()} готов`)).catch((e) => console.error(`[zaliv] Chromium не запустился: ${e.message.split('\n')[0]}`));
 await app.listen({ host: config.host, port: config.port });
 console.log(`[zaliv] v${ctx.version} слушает ${config.host}:${config.port}, TikTok: ${config.tiktok.origin}, браузер: ${config.browser.headless ? 'headless' : 'headful'}`);
 

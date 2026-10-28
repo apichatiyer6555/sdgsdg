@@ -8,20 +8,21 @@ import { textInput } from '../lib/forms.js';
 import { adStateChip, campaignChip, pill, REASON_TONE, spinner } from '../lib/status.js';
 import { num, pct, relTime } from '../lib/format.js';
 import { sortHead, sortRows } from '../lib/table.js';
+import { normAd } from '../lib/normalize.js';
 
 const COLS = [
-  { key: 'name', label: 'Кампания', sortable: true },
-  { key: 'status', label: 'Статус', sortable: true },
-  { key: 'reason', label: 'Причина', sortable: true },
-  { key: 'budget', label: 'Бюджет', num: true, sortable: true },
-  { key: 'spend', label: 'Расход', num: true, sortable: true },
-  { key: 'impressions', label: 'Показы', num: true, sortable: true },
-  { key: 'clicks', label: 'Клики', num: true, sortable: true },
-  { key: 'conversions', label: 'Конв.', num: true, sortable: true },
-  { key: 'ctr', label: 'CTR', num: true, sortable: true },
-  { key: 'cpc', label: 'CPC', num: true, sortable: true },
-  { key: 'cpa', label: 'CPA', num: true, sortable: true },
-  { key: 'cvr', label: 'CVR', num: true, sortable: true }
+  { key: 'name', label: 'Кампания', sortable: true, width: 240 },
+  { key: 'status', label: 'Статус', sortable: true, width: 128 },
+  { key: 'reason', label: 'Причина', sortable: true, width: 190 },
+  { key: 'budget', label: 'Бюджет', num: true, sortable: true, width: 92 },
+  { key: 'spend', label: 'Расход', num: true, sortable: true, width: 96 },
+  { key: 'impressions', label: 'Показы', num: true, sortable: true, width: 92 },
+  { key: 'clicks', label: 'Клики', num: true, sortable: true, width: 76 },
+  { key: 'conversions', label: 'Конв.', num: true, sortable: true, width: 72 },
+  { key: 'ctr', label: 'CTR', num: true, sortable: true, width: 72 },
+  { key: 'cpc', label: 'CPC', num: true, sortable: true, width: 72 },
+  { key: 'cpa', label: 'CPA', num: true, sortable: true, width: 80 },
+  { key: 'cvr', label: 'CVR', num: true, sortable: true, width: 72 }
 ];
 const STATUS_RANK = { issue: 0, working: 1, off: 2 };
 const GETTERS = { name: (c) => c.name, status: (c) => STATUS_RANK[c.status] ?? 9, reason: (c) => c.reason || null };
@@ -42,7 +43,7 @@ export function openCampaignsDrawer({ accountId, advertiserId, name }) {
   search.addEventListener('input', debounce(() => { S.q = search.value; paintTable(); }, 150));
   const head = sortHead(COLS, S.sort, () => paintTable());
   const tbody = h('tbody');
-  const table = h('table', { class: 'dtable plain campaigns' }, head.el, tbody);
+  const table = h('table', { class: 'dtable plain campaigns' }, h('colgroup', null, COLS.map((c) => h('col', { style: { width: `${c.width}px` } }))), head.el, tbody);
   const refresh = h('button', { class: 'btn sm', type: 'button', onclick: () => load(true) }, icon('refresh', 14), 'Обновить');
   const syncBtn = canEdit() ? h('button', { class: 'btn sm', type: 'button', title: 'Обновить данные логина из TikTok', onclick: async () => {
     syncBtn.disabled = true;
@@ -53,9 +54,10 @@ export function openCampaignsDrawer({ accountId, advertiserId, name }) {
   function paintHead() {
     const ad = data.adAccount, m = ad.metrics, cur = ad.currency;
     const tile = (label, value, sub) => h('div', { class: 'kpi-mini' }, h('span', null, label), h('b', null, value), sub ? h('small', null, sub) : null);
-    kpis.replaceChildren(tile('Расход 7д', m.spend ? `${num(m.spend, 2)} ${cur}` : '—'), tile('Показы', num(m.impressions)), tile('Клики', num(m.clicks)), tile('Конверсии', num(m.conversions)),
-      tile('CTR', pct(m.ctr)), tile('CPC', m.cpc === null ? '—' : `${num(m.cpc, 2)} ${cur}`), tile('CPA', m.cpa === null ? '—' : `${num(m.cpa, 2)} ${cur}`));
-    info.replaceChildren(adStateChip(ad.state),
+    const big = (v) => (v >= 100000 ? num(v, 0) : num(v, 2));
+    kpis.replaceChildren(tile('Расход 7д', m.spend ? `${big(m.spend)} ${cur}` : '—'), tile('Показы', num(m.impressions)), tile('Клики', num(m.clicks)), tile('Конверсии', num(m.conversions)),
+      tile('CTR', pct(m.ctr)), tile('CPC', m.cpc === null ? '—' : `${big(m.cpc)} ${cur}`), tile('CPA', m.cpa === null ? '—' : `${big(m.cpa)} ${cur}`));
+    fill(info, adStateChip(ad.state),
       h('span', { class: 'muted small' }, `Кампаний: ${num(ad.campaigns.working)} работают из ${num(ad.campaigns.total)}${ad.campaigns.problem ? `, проблемных: ${num(ad.campaigns.problem)}` : ''}`),
       ...ad.reasons.map((r) => pill(`${r.text} · ${r.count}`, REASON_TONE[r.kind] ?? 'muted', { className: 'sm' })),
       ad.needsTopUp ? pill('Нужно пополнение', 'err', { glyph: 'alert' }) : null,
@@ -87,8 +89,9 @@ export function openCampaignsDrawer({ accountId, advertiserId, name }) {
   async function load(manual = false) {
     if (manual) { refresh.disabled = true; refresh.replaceChildren(spinner(), 'Обновить'); }
     try {
-      data = await api.get(`/api/ad-accounts/${accountId}/${advertiserId}/campaigns`);
+      const raw = await api.get(`/api/ad-accounts/${accountId}/${advertiserId}/campaigns`);
       if (!drawer.open) return;
+      data = { ...raw, adAccount: normAd(raw.adAccount ?? {}), items: raw.items ?? [] };
       if (!body.querySelector('.kpi-mini-grid')) {
         fill(body, h('div', { class: 'row' }, info), kpis,
           h('div', { class: 'row wrap toolbar-inline' }, h('div', { class: 'search' }, icon('search', 16), search), chips.el, h('span', { class: 'spacer' }), syncBtn, refresh,

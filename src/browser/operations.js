@@ -57,7 +57,7 @@ export class Operations {
     return {
       running: rt.filter((r) => r.busy).length,
       browser: {
-        ready: this.pool.ready, headless: this.config.browser.headless,
+        ready: this.pool.available, headless: this.config.browser.headless,
         interactive: { active: this.pool.interactive.active, max: this.pool.interactive.max },
         background: { active: this.pool.background.active, max: this.pool.background.max, queued: this.pool.background.queued }
       }

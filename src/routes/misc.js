@@ -17,7 +17,7 @@ export function miscRoutes(app, ctx) {
   const ownerOnly = (req) => { if (req.panel.user.role !== 'owner') throw forbidden('Раздел доступен только владельцу.'); };
   const writer = (req) => { if (req.panel.user.role === 'viewer') throw forbidden(); };
 
-  app.get('/healthz', async () => ({ ok: true }));
+  app.get('/healthz', { logLevel: 'silent' }, async () => ({ ok: true }));
 
   app.get('/api/dashboard', async () => {
     const list = accounts.list().items;

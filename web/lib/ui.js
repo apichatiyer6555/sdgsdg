@@ -159,7 +159,13 @@ export function openMenu(anchor, items) {
     menu.append(btn);
   }
   const outside = (e) => { if (!menu.contains(e.target) && !anchor.contains(e.target)) layer.close(); };
-  const dismiss = (e) => { if (!menu.contains(e.target)) layer.close(); };
+  // A scroll closes the menu only if its anchor really moved (late scroll events from earlier scrolling are ignored).
+  let origin = null;
+  const dismiss = (e) => {
+    if (menu.contains(e.target)) return;
+    const r = anchor.isConnected ? anchor.getBoundingClientRect() : null;
+    if (!r || Math.abs(r.top - origin.top) > 1 || Math.abs(r.left - origin.left) > 1) layer.close();
+  };
   const layer = {
     el: menu, panel: menu, modal: false, dismissable: true, anchor,
     close() {
@@ -189,6 +195,7 @@ export function openMenu(anchor, items) {
   const below = r.bottom + 6;
   const top = below + menu.offsetHeight > innerHeight - 8 ? Math.max(8, r.top - menu.offsetHeight - 6) : below;
   Object.assign(menu.style, { left: `${left}px`, top: `${top}px` });
+  origin = anchor.getBoundingClientRect();
   document.addEventListener('pointerdown', outside, true);
   document.addEventListener('scroll', dismiss, true);
   addEventListener('resize', layer.close);

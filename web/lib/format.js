@@ -17,14 +17,16 @@ export const moneyParts = (list) => (Array.isArray(list) && list.length ? list.m
 
 const toMs = (value) => (typeof value === 'number' ? value : Date.parse(value));
 
+// Intl formatters are expensive to create: keep one of each (toLocaleString per call is ~10x slower).
+const dateTimeFmt = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const dateFmt = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
 export function fmtDateTime(value) {
   const t = toMs(value);
-  if (!Number.isFinite(t)) return '—';
-  return new Date(t).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return Number.isFinite(t) ? dateTimeFmt.format(t) : '—';
 }
 export function fmtDate(value) {
   const t = toMs(value);
-  return Number.isFinite(t) ? new Date(t).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+  return Number.isFinite(t) ? dateFmt.format(t) : '—';
 }
 
 // «5 мин назад» / «через 2 ч»
@@ -57,8 +59,14 @@ export function uptime(sec) {
 export function relTime(value, { empty = '—' } = {}) {
   const t = toMs(value);
   if (!Number.isFinite(t)) return h('span', { class: 'muted' }, empty);
-  return h('time', { class: 'rel', datetime: new Date(t).toISOString(), title: fmtDateTime(t), dataset: { ts: t } }, rel(t));
+  return h('time', { class: 'rel', dataset: { ts: t } }, rel(t));
 }
+
+// The absolute date shows as a tooltip; it is formatted on first hover, not for every row up front.
+document.addEventListener('mouseover', (e) => {
+  const el = e.target instanceof Element ? e.target.closest('time.rel') : null;
+  if (el && !el.title) { el.title = fmtDateTime(Number(el.dataset.ts)); el.dateTime = new Date(Number(el.dataset.ts)).toISOString(); }
+});
 
 let ticker = 0;
 export function startRelTicker() {

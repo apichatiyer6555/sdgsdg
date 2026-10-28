@@ -28,7 +28,7 @@ export function mount(root, { params }) {
   const paintRefresh = () => { refresh.disabled = loading; refresh.replaceChildren(loading ? spinner() : icon('refresh', 16), 'Обновить'); };
   const tbody = h('tbody');
   const table = h('table', { class: 'dtable journal-table' },
-    h('colgroup', null, [150, 150, 120, 200, 130].map((w) => h('col', { style: { width: `${w}px` } })), h('col')),
+    h('colgroup', null, [150, 176, 110, 200, 130].map((w) => h('col', { style: { width: `${w}px` } })), h('col')),
     h('thead', null, h('tr', null, ['Время', 'Уровень', 'Тип', 'Логин', 'Пользователь', 'Сообщение'].map((t) => h('th', { scope: 'col' }, t)))), tbody);
   const more = h('div', { class: 'more-box' });
   const stateBox = h('div', { class: 'state-box' });
@@ -63,7 +63,8 @@ export function mount(root, { params }) {
     try {
       const res = await api.get('/api/journal', { limit: PAGE, level: S.level, accountId: S.accountId, before: append && items.length ? items.at(-1).id : '' });
       if (!alive || my !== seq) return;
-      items = append ? [...items, ...res.items] : res.items;
+      const got = res.items ?? [];
+      items = append ? [...items, ...got] : got;
       hasMore = !!res.hasMore;
     } catch (error) {
       if (!alive || my !== seq) return;

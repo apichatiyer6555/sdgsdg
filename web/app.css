@@ -47,7 +47,7 @@ a { color: var(--accent); }
 .row.center { justify-content: center; }
 .spacer { flex: 1; }
 .stack { display: grid; gap: 12px; align-content: start; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .mono { font-family: var(--mono); font-size: 12px; }
@@ -123,6 +123,7 @@ a { color: var(--accent); }
 .btn.danger:hover:not([disabled]) { filter: brightness(1.08); background: linear-gradient(135deg, var(--pink), #e11d48); }
 .btn.ghost { background: transparent; }
 .btn.sm { min-height: 30px; padding: 0 11px; font-size: 12.5px; border-radius: 8px; }
+.btn.xs { min-height: 26px; padding: 0 10px; font-size: 12px; border-radius: 7px; gap: 5px; }
 .btn.block { width: 100%; }
 .btn.cta { color: #1c1300; border-color: transparent; background: linear-gradient(135deg, #fbbf24, #f59e0b); }
 .btn.cta:hover:not([disabled]) { filter: brightness(1.06); background: linear-gradient(135deg, #fbbf24, #f59e0b); }
@@ -180,7 +181,7 @@ a { color: var(--accent); }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 /* ---------- forms ---------- */
-.field { display: grid; gap: 6px; min-width: 0; }
+.field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .label { font-size: 12px; font-weight: 650; color: var(--muted); }
 .hint { font-size: 12px; color: var(--faint); }
 .form-error { color: var(--err); font-size: 12.5px; min-height: 0; }
@@ -254,7 +255,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .menu-item.danger { color: var(--err); }
 .menu-item[disabled] { opacity: .45; cursor: not-allowed; }
 .menu-sep { height: 1px; background: var(--line-2); margin: 4px 2px; }
-#toasts { position: fixed; right: 20px; bottom: 20px; z-index: 300; display: grid; gap: 8px; width: min(420px, calc(100vw - 40px)); pointer-events: none; }
+#toasts { position: fixed; left: 16px; bottom: 16px; z-index: 300; display: grid; gap: 8px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
 .toast { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 12px; background: var(--card-3); border: 1px solid var(--line-2); box-shadow: var(--shadow); font-size: 13px; pointer-events: auto; animation: pop .2s; }
 .toast.ok { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
 .toast.error { border-color: color-mix(in srgb, var(--err) 60%, transparent); }

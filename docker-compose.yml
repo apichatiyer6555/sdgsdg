@@ -21,6 +21,9 @@ services:
       - zaliv_data:/app/data
       - ./backups:/app/backups
     shm_size: "1gb"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
     mem_limit: 4g
     cpus: 3
 
